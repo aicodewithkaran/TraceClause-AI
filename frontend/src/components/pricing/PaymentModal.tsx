@@ -1,12 +1,18 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Check, Shield, Globe, CreditCard, Sparkles, X } from 'lucide-react';
+import { Check, Globe, CreditCard, Sparkles, X } from 'lucide-react';
 import axios from 'axios';
 
 interface PricingModalProps {
   isOpen: boolean;
   onClose: () => void;
+}
+
+interface RazorpayResponse {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
 }
 
 export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) => {
@@ -47,7 +53,7 @@ export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) =
           name: 'TraceClause AI',
           description: `${planTier.toUpperCase()} Plan Subscription`,
           order_id: orderRes.data.order_id,
-          handler: async function (response: any) {
+          handler: async function (response: RazorpayResponse) {
             await axios.post('http://localhost:8000/api/v1/payments/razorpay/verify', {
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
@@ -61,11 +67,12 @@ export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) =
           theme: { color: '#4f46e5' },
         };
 
-        const rzp = new (window as any).Razorpay(options);
+        const rzp = new (window as unknown as { Razorpay: new (opts: unknown) => { open: () => void } }).Razorpay(options);
         rzp.open();
       }
-    } catch (err: any) {
-      alert(`Checkout initiation failed: ${err?.message || 'Server error'}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Server error';
+      alert(`Checkout initiation failed: ${message}`);
     } finally {
       setLoading(false);
     }

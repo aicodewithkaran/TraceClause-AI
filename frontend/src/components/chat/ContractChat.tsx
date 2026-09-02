@@ -45,7 +45,7 @@ export const ContractChat: React.FC<ContractChatProps> = ({ contractText }) => {
           citations: res.citations,
         },
       ]);
-    } catch (err) {
+    } catch {
       setMessages((prev) => [
         ...prev,
         {

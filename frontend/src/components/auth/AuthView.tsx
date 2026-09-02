@@ -8,9 +8,6 @@ import { InteractiveMotionGraphic } from './InteractiveMotionGraphic';
 import { 
   ShieldCheck, 
   Sparkles, 
-  Scale, 
-  FileText, 
-  Lock, 
   CheckCircle2, 
   User, 
   Mail, 
@@ -68,8 +65,9 @@ export const AuthView: React.FC = () => {
           phone_number: phoneNumber,
         });
       }
-    } catch (err: any) {
-      setError(err?.message || 'Authentication failed. Please try again.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Authentication failed. Please try again.';
+      setError(message);
     } finally {
       setLoading(false);
     }

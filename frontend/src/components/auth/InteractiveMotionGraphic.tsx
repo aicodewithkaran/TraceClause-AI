@@ -8,10 +8,7 @@ import {
   Scale, 
   FileText, 
   Cpu, 
-  Zap, 
   GitBranch, 
-  ShieldCheck, 
-  Sparkles,
   Layers,
   Activity
 } from 'lucide-react';

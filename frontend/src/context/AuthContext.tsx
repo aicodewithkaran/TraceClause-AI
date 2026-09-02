@@ -4,8 +4,10 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { UserProfile, SignupRequest, LoginRequest } from '@/types/auth';
 
+import { User } from '@supabase/supabase-js';
+
 interface AuthContextType {
-  user: any | null;
+  user: User | null;
   profile: UserProfile | null;
   loading: boolean;
   login: (req: LoginRequest) => Promise<void>;
@@ -18,9 +20,40 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<any | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+
+  const fetchProfile = async (currentUser: User) => {
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', currentUser.id)
+        .single();
+
+      const metaName = currentUser.user_metadata?.full_name || (currentUser as unknown as { raw_user_meta_data?: { full_name?: string } }).raw_user_meta_data?.full_name;
+
+      if (data) {
+        setProfile({
+          ...data,
+          full_name: data.full_name || metaName || currentUser.email?.split('@')[0] || 'TraceClause User',
+        } as UserProfile);
+      } else {
+        setProfile({
+          id: currentUser.id,
+          email: currentUser.email || '',
+          full_name: metaName || currentUser.email?.split('@')[0] || 'TraceClause User',
+          country: currentUser.user_metadata?.country || 'Global',
+          profession: currentUser.user_metadata?.profession || 'Legal Professional',
+          subscription_tier: 'free',
+          weekly_quota_used: 0,
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching profile:', err);
+    }
+  };
 
   useEffect(() => {
     // 1. Initial Session Check
@@ -54,39 +87,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => subscription.unsubscribe();
   }, []);
-
-  const fetchProfile = async (currentUser: any) => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', currentUser.id)
-        .single();
-
-      // Extract full name from user_metadata if present
-      const metaName = currentUser.user_metadata?.full_name || currentUser.raw_user_meta_data?.full_name;
-
-      if (data) {
-        setProfile({
-          ...data,
-          full_name: data.full_name || metaName || currentUser.email?.split('@')[0] || 'TraceClause User',
-        } as UserProfile);
-      } else {
-        // Fallback default profile state using user_metadata
-        setProfile({
-          id: currentUser.id,
-          email: currentUser.email || '',
-          full_name: metaName || currentUser.email?.split('@')[0] || 'TraceClause User',
-          country: currentUser.user_metadata?.country || 'Global',
-          profession: currentUser.user_metadata?.profession || 'Legal Professional',
-          subscription_tier: 'free',
-          weekly_quota_used: 0,
-        });
-      }
-    } catch (err) {
-      console.error('Error fetching profile:', err);
-    }
-  };
 
   const refreshProfile = async () => {
     if (user) {

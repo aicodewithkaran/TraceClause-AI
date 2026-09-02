@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { UploadCloud, FileText, AlertCircle, Loader2, Sparkles, ShieldCheck } from 'lucide-react';
+import { UploadCloud, FileText, AlertCircle, Sparkles, ShieldCheck } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { ContractAnalysisResponse } from '@/types/contract';
 import { useTheme } from '@/context/ThemeContext';
@@ -39,8 +39,9 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onAnalysisComplete }) => {
       );
 
       onAnalysisComplete(analysisRes);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to process contract. Please check backend status.');
+    } catch (err: unknown) {
+      const apiErr = err as { response?: { data?: { detail?: string } } };
+      setError(apiErr?.response?.data?.detail || 'Failed to process contract. Please check backend status.');
     } finally {
       setLoading(false);
       setStatusMessage(null);

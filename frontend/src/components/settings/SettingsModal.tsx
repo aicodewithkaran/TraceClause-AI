@@ -89,7 +89,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         await refreshProfile();
         setProfileMessage('Profile details updated successfully!');
       }
-    } catch (err: any) {
+    } catch {
       setProfileMessage('Failed to update profile.');
     } finally {
       setProfileLoading(false);
@@ -119,8 +119,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
       setPasswordMessage('Password updated successfully!');
       setNewPassword('');
       setConfirmPassword('');
-    } catch (err: any) {
-      setPasswordError(err?.message || 'Failed to update password.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to update password.';
+      setPasswordError(message);
     } finally {
       setPasswordLoading(false);
     }
@@ -132,7 +133,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
       try {
         await supabase.from('contract_reports').delete().eq('user_id', user.id);
         alert('All report history cleared.');
-      } catch (err) {
+      } catch {
         alert('Failed to clear history.');
       }
     }
@@ -154,8 +155,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         onClose();
         alert('Your account and all associated data have been permanently deleted.');
       }
-    } catch (err: any) {
-      setDangerError(err?.message || 'Failed to delete account. Please contact support.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to delete account. Please contact support.';
+      setDangerError(message);
     } finally {
       setDeleteLoading(false);
     }

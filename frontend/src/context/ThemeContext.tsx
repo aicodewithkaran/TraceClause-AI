@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 
 type Theme = 'dark' | 'light';
 
@@ -12,14 +12,13 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [theme, setTheme] = useState<Theme>('dark');
-
-  useEffect(() => {
-    const saved = localStorage.getItem('scanshield_theme') as Theme;
-    if (saved) {
-      setTheme(saved);
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('scanshield_theme') as Theme;
+      if (saved) return saved;
     }
-  }, []);
+    return 'dark';
+  });
 
   const toggleTheme = () => {
     const nextTheme = theme === 'dark' ? 'light' : 'dark';
