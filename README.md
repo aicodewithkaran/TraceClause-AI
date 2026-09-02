@@ -59,7 +59,7 @@ Explore our comprehensive 11-part production architecture and interview preparat
 
 ### Prerequisites
 - Python 3.12+
-- Node.js 18+
+- Node.js 22+ / 24 LTS (Required by `@supabase/supabase-js` v2.109+)
 - Supabase Account (or PostgreSQL with `pgvector`)
 
 ---
