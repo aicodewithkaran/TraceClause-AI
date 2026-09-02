@@ -1,10 +1,10 @@
 # 🛡️ TraceClause AI (ScanShield AI v2) — Enterprise Legal Contract Auditor
 
-An Awwwards-style, enterprise-grade decoupled legal contract audit platform built with **Next.js 15, FastAPI, LangChain, Supabase pgvector, Claude 3.5 Sonnet / GPT-4o, and Stripe Monetization**.
+An Awwwards-style, enterprise-grade decoupled legal contract audit platform built with **Next.js 16, FastAPI, LangChain, Supabase pgvector, Multi-LLM (Claude 3.5 Sonnet / GPT-4o / Gemini 1.5 Pro), Stripe & Razorpay Monetization, and Native .docx Redline Exports**.
 
 ![License](https://img.shields.io/badge/license-MIT-indigo.svg)
-![Next.js](https://img.shields.io/badge/Next.js-15.0-black.svg)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.109.0-emerald.svg)
+![Next.js](https://img.shields.io/badge/Next.js-16.0-black.svg)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0-emerald.svg)
 ![Supabase](https://img.shields.io/badge/Supabase-pgvector-emerald.svg)
 ![Python](https://img.shields.io/badge/Python-3.12-blue.svg)
 
@@ -14,12 +14,13 @@ An Awwwards-style, enterprise-grade decoupled legal contract audit platform buil
 
 **TraceClause AI** transforms unstructured, lengthy legal contracts into high-precision, actionable risk audits. Built for law firms, legal tech teams, and document-heavy operations:
 
+- **2-Tier B2B Monetization & Hard-Capped Free Trial**: 3 Lifetime Total Free Audits (hard stop limit), Solo Plan ($79/mo - 20 reviews), and Team Plan ($299/mo - 100 pooled reviews + 4 workspace seats).
+- **Feature-Gated Authorization Guard**: FastAPI middleware (`require_feature`) enforcing tier-specific permissions across interactive RAG, `.docx` exports, and shared workspaces.
+- **Native Word (.docx) Redline Export Engine**: Generates Microsoft Word `.docx` documents featuring strikethrough red original text, green underlined counter-language recommendations, and shaded callout boxes detailing risk rationale.
+- **Native 1536-Dim Vector Normalization**: Requests 1536 native dimensions from `gemini-embedding-001` via Matryoshka Representation Learning (`config={"output_dimensionality": 1536}`), completely eliminating vector zero-padding.
+- **Multi-Seat Workspaces**: Team tier workspace collaboration with role-based member management and workspace-aware Row Level Security (RLS) policies.
 - **Split-Screen Masterwork Dashboard**: Synchronized 50/50 line-numbered document viewer & soft-tinted risk cards grid.
-- **The Trap & Redline Generator**: Plain-English explanations of dangerous clauses + 1-click copyable counter-language wording.
-- **Citation-Linked AI Assistant**: Interactive chat drawer where clicking `[Source: Line 13]` citation pills automatically snaps the document viewer to the exact target clause.
-- **OCR-Enabled Processing**: Automatic fallback for scanned image PDFs using `PyMuPDF` + `Tesseract` / `Mistral OCR`.
-- **Baseline Audit Playbooks**: Customizable strictness matching (*Standard Enterprise MSA*, *Vendor Defense*, *Founder Friendly*).
-- **Stripe Monetization Engine**: Metered credit tracking system with Free (2 audits) and Pro ($49/mo) tiers.
+- **Dual Payment Gateways**: International Stripe Checkout (USD) & India Razorpay Checkout (INR / UPI / Cards).
 
 ---
 
@@ -27,18 +28,18 @@ An Awwwards-style, enterprise-grade decoupled legal contract audit platform buil
 
 | Layer | Technologies Used |
 | :--- | :--- |
-| **Frontend** | Next.js 15, React 19, Tailwind CSS v4, Lucide Icons, Zustand / React Context |
-| **Backend API** | Python 3.12, FastAPI, Uvicorn, Pydantic v2, Slowapi Rate Limiter |
-| **Parsing & OCR** | PyMuPDF, python-docx, LlamaParse, Tesseract OCR |
-| **Vector DB & RAG** | Supabase PostgreSQL (`pgvector`), OpenAI `text-embedding-3-small` (HNSW Index) |
-| **LLM Reasoning** | Anthropic Claude 3.5 Sonnet, OpenAI GPT-4o |
-| **Monetization** | Stripe SDK (Checkout Sessions & Webhook Event Listeners) |
+| **Frontend** | Next.js 16, React 19, Tailwind CSS v3/v4, Lucide Icons, React Context |
+| **Backend API** | Python 3.12, FastAPI, Uvicorn, Pydantic v2 |
+| **Parsing & Export** | PyMuPDF, python-docx (Native Word Redlines) |
+| **Vector DB & RAG** | Supabase PostgreSQL (`pgvector`), OpenAI `text-embedding-3-small` & Gemini `gemini-embedding-001` (1536-dim MRL, HNSW Index) |
+| **LLM Reasoning** | Anthropic Claude 3.5 Sonnet, OpenAI GPT-4o, Google Gemini 1.5 Pro |
+| **Monetization** | Stripe SDK (USD International) & Razorpay SDK (INR / UPI / Local India) |
 
 ---
 
 ## 📚 Complete System Documentation (`docs/`)
 
-Explore our comprehensive 9-part production architecture and interview preparation specifications:
+Explore our comprehensive 11-part production architecture and interview preparation specifications:
 
 1. 📄 [01. Low-Level Wiring & System Data Flow](docs/01-low-level-wiring.md)
 2. 📄 [02. Points of Failures & Risk Mitigation](docs/02-point-of-failures.md)
@@ -49,6 +50,8 @@ Explore our comprehensive 9-part production architecture and interview preparati
 7. 📄 [07. Evaluation & Quality Assurance (Testing Metrics)](docs/07-test-metrics.md)
 8. 📄 [08. Deployment Runbook & Production Release](docs/08-deployment-runbook.md)
 9. 🎓 [09. Interview Deep-Dive: RAG Architecture & Legal Audit Engine](docs/09-interview-rag-architecture-deep-dive.md)
+10. 📄 [10. System Architecture, Env & Database Roadmap](docs/10-system-architecture-env-db-roadmap.md)
+11. 📄 [11. Database Schema & Vector Storage Deep Dive](docs/11-database-schema-vector-storage-deep-dive.md)
 
 ---
 
@@ -70,7 +73,7 @@ cd backend
 # Activate virtual environment
 source venv/bin/activate
 
-# Install dependencies (if needed)
+# Install dependencies
 pip install -r requirements.txt
 
 # Start FastAPI server
@@ -108,35 +111,32 @@ API_V1_STR="/api/v1"
 ALLOWED_ORIGINS="http://localhost:3000,https://traceclause.vercel.app"
 
 OPENAI_API_KEY="sk-proj-..."
+GEMINI_API_KEY="AIzaSy..."
 ANTHROPIC_API_KEY="sk-ant-..."
-LLAMAPARSE_API_KEY="llx-..."
 
 SUPABASE_URL="https://your-project.supabase.co"
+SUPABASE_KEY="eyJhbGci..."
 SUPABASE_SERVICE_ROLE_KEY="eyJhbGci..."
-DATABASE_URL="postgresql://postgres:password@db.your-project.supabase.co:5432/postgres"
 
 STRIPE_SECRET_KEY="sk_test_..."
-STRIPE_WEBHOOK_SECRET="whsec_..."
-```
-
-### Frontend `.env.local` (`/frontend/.env.local`)
-
-```env
-NEXT_PUBLIC_API_BASE_URL="http://localhost:8000/api/v1"
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="pk_test_..."
+RAZORPAY_KEY_ID="rzp_test_..."
+RAZORPAY_KEY_SECRET="..."
 ```
 
 ---
 
 ## 🌐 REST API Endpoints Summary
 
-| Method | Endpoint Route | Description |
-| :--- | :--- | :--- |
-| `POST` | `/api/v1/upload` | Ingests PDF/Word contract & runs parsing |
-| `POST` | `/api/v1/analysis` | Audits contract clauses against Playbook baseline |
-| `POST` | `/api/v1/chat` | Citation-linked contract Q&A streaming |
-| `POST` | `/api/v1/billing/create-checkout` | Generates Stripe Checkout Session |
-| `POST` | `/api/v1/billing/webhook` | Handles Stripe subscription webhook events |
+| Method | Endpoint Route | Feature Guard | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/documents/upload` | Open | Ingests PDF/Word contract & extracts RAM text |
+| `POST` | `/api/v1/contract/analyze` | Quota Check | Audits contract clauses & generates AI redlines |
+| `GET` | `/api/v1/contract/my-reports` | Authenticated | Fetches user's historical audit reports |
+| `GET` | `/api/v1/contract/{report_id}/export-docx` | `docx_export` | Generates and streams native Word `.docx` redline report |
+| `POST` | `/api/v1/rag/chat` | `rag_interactive_chat` | Citation-linked contract RAG Q&A |
+| `GET/POST`| `/api/v1/workspaces/` | `workspace_management` | Manages team workspaces & workspace seats |
+| `POST` | `/api/v1/payments/stripe/create-checkout-session` | Open | Stripe Checkout for USD ($79 Solo / $299 Team) |
+| `POST` | `/api/v1/payments/razorpay/create-order` | Open | Razorpay Order for INR (₹7,499 Solo / ₹27,999 Team) |
 
 ---
 

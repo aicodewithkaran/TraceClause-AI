@@ -11,6 +11,8 @@ from app.schemas.payment import (
     RazorpayVerificationRequest
 )
 
+from supabase import create_client, Client
+
 class PaymentService:
     """Unified Payment Manager supporting Stripe (International) and Razorpay (Local/India)."""
 
@@ -25,6 +27,11 @@ class PaymentService:
         else:
             self.razorpay_client = None
 
+        if settings.SUPABASE_URL and settings.SUPABASE_KEY:
+            self.supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+        else:
+            self.supabase = None
+
     def create_stripe_checkout(self, req: StripeCheckoutRequest) -> StripeCheckoutResponse:
         if not settings.STRIPE_SECRET_KEY:
             # Return demo mock session if key not configured
@@ -33,15 +40,18 @@ class PaymentService:
                 session_id="cs_demo_12345"
             )
 
+        tier = req.plan_tier.lower()
+        unit_amount = 29900 if tier == 'team' else 7900  # $299 or $79 in cents
+
         session = stripe.checkout.Session.create(
             payment_method_types=['card'],
             line_items=[{
                 'price_data': {
                     'currency': 'usd',
                     'product_data': {
-                        'name': f"ScanShield AI - {req.plan_tier.capitalize()} Plan Subscription",
+                        'name': f"TraceClause AI - {req.plan_tier.capitalize()} Plan Subscription",
                     },
-                    'unit_amount': 2900 if req.plan_tier.lower() == 'pro' else 9900, # $29 or $99
+                    'unit_amount': unit_amount,
                 },
                 'quantity': 1,
             }],
@@ -57,7 +67,9 @@ class PaymentService:
         )
 
     def create_razorpay_order(self, req: RazorpayOrderRequest) -> RazorpayOrderResponse:
-        amount_paise = req.amount_inr * 100 # Convert to Paise
+        tier = req.plan_tier.lower()
+        amount_inr = 27999 if tier == 'team' else 7499 # ₹27,999 or ₹7,499
+        amount_paise = amount_inr * 100 # Convert to Paise
 
         if not self.razorpay_client:
             # Return demo mock order if keys not configured
@@ -98,3 +110,39 @@ class PaymentService:
         ).hexdigest()
 
         return generated_signature == req.razorpay_signature
+
+    def activate_subscription(self, user_id: str, plan_tier: str):
+        """Activates Solo or Team tier, updates quota, and provisions workspace for Team tier."""
+        if not self.supabase:
+            return
+
+        tier = plan_tier.lower()
+        if tier not in ['solo', 'team']:
+            tier = 'solo'
+
+        # Update profile subscription tier
+        self.supabase.table("profiles").update({
+            "subscription_tier": tier,
+            "monthly_quota_used": 0
+        }).eq("id", user_id).execute()
+
+        # Provision Workspace if Team tier
+        if tier == 'team':
+            ws_check = self.supabase.table("workspaces").select("id").eq("owner_id", user_id).execute()
+            if not ws_check.data or len(ws_check.data) == 0:
+                prof_res = self.supabase.table("profiles").select("full_name").eq("id", user_id).single().execute()
+                owner_name = prof_res.data.get("full_name", "Team") if prof_res.data else "Team"
+                
+                ws_res = self.supabase.table("workspaces").insert({
+                    "owner_id": user_id,
+                    "name": f"{owner_name}'s Workspace",
+                    "seat_limit": 4
+                }).execute()
+
+                if ws_res.data and len(ws_res.data) > 0:
+                    ws_id = ws_res.data[0]["id"]
+                    self.supabase.table("workspace_members").insert({
+                        "workspace_id": ws_id,
+                        "user_id": user_id,
+                        "role": "owner"
+                    }).execute()
