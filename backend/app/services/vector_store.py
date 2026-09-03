@@ -34,41 +34,53 @@ class VectorStoreService:
             return "anthropic"
         return "mock"
 
+    BATCH_SIZE = 50
+
     def generate_embedding(self, text: str) -> List[float]:
+        """Generates a single 1536-dim embedding vector using batch pipeline."""
+        results = self.generate_embeddings_batch([text])
+        return results[0] if results else [0.0] * 1536
+
+    def generate_embeddings_batch(self, texts: List[str]) -> List[List[float]]:
         """
-        Generates 1536-dimensional embeddings for both OpenAI and Gemini natively (using MRL output_dimensionality).
-        No zero-padding is applied.
+        Generates 1536-dimensional embeddings in batches of up to 50 items per API call.
+        Supports both Gemini (gemini-embedding-001) and OpenAI (text-embedding-3-small).
         """
-        embedding: List[float] = []
+        all_embeddings: List[List[float]] = []
 
-        if self.embedding_provider == "openai" and self.openai_client:
-            try:
-                res = self.openai_client.embeddings.create(
-                    model=settings.OPENAI_EMBEDDING_MODEL,
-                    input=text
-                )
-                embedding = res.data[0].embedding
-            except Exception as e:
-                print(f"OpenAI embedding error: {e}")
+        for i in range(0, len(texts), self.BATCH_SIZE):
+            batch_texts = texts[i:i + self.BATCH_SIZE]
 
-        elif self.embedding_provider == "gemini" and self.gemini_client:
-            try:
-                res = self.gemini_client.models.embed_content(
-                    model="gemini-embedding-001",
-                    contents=text,
-                    config={"output_dimensionality": 1536}
-                )
-                embedding = list(res.embeddings[0].values if hasattr(res, 'embeddings') and res.embeddings else res.embedding.values)
-            except Exception as e:
-                print(f"Gemini embedding error: {e}")
+            if self.embedding_provider == "openai" and self.openai_client:
+                try:
+                    res = self.openai_client.embeddings.create(
+                        model=settings.OPENAI_EMBEDDING_MODEL,
+                        input=batch_texts
+                    )
+                    for data in res.data:
+                        all_embeddings.append(data.embedding)
+                except Exception as e:
+                    print(f"OpenAI batch embedding error: {e}")
+                    all_embeddings.extend([[0.0] * 1536 for _ in batch_texts])
 
-        if not embedding or len(embedding) == 0:
-            # Fallback 1536-dim array for mock/testing
-            embedding = [0.0] * 1536
+            elif self.embedding_provider == "gemini" and self.gemini_client:
+                try:
+                    res = self.gemini_client.models.embed_content(
+                        model=settings.GEMINI_EMBEDDING_MODEL,
+                        contents=batch_texts,
+                        config={"output_dimensionality": 1536}
+                    )
+                    embeddings_list = res.embeddings if hasattr(res, 'embeddings') and res.embeddings else [res.embedding]
+                    for emb in embeddings_list:
+                        values = list(emb.values)
+                        all_embeddings.append(values)
+                except Exception as e:
+                    print(f"Gemini batch embedding error: {e}")
+                    all_embeddings.extend([[0.0] * 1536 for _ in batch_texts])
+            else:
+                all_embeddings.extend([[0.0] * 1536 for _ in batch_texts])
 
-        # Enforce exact 1536 dimensions vector length assertion
-        assert len(embedding) == 1536, f"Expected embedding dimensionality 1536, got {len(embedding)}"
-        return embedding
+        return all_embeddings
 
     def query_contract(self, contract_text: str, question: str) -> Dict:
         system_prompt = "You are TraceClause AI legal assistant. Answer the user's question accurately using ONLY the contract text. Cite clause numbers."

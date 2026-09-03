@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Send, Bot, User, Loader2, Sparkles } from 'lucide-react';
+import { Send, Bot, User, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { useTheme } from '@/context/ThemeContext';
 
 interface ContractChatProps {
   contractText: string;
+  isReady?: boolean;
 }
 
 interface Message {
@@ -15,20 +16,22 @@ interface Message {
   citations?: string[];
 }
 
-export const ContractChat: React.FC<ContractChatProps> = ({ contractText }) => {
+export const ContractChat: React.FC<ContractChatProps> = ({ contractText, isReady = true }) => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: 'I have parsed this contract into vector space. Ask me any question about termination terms, liabilities, or warranties.',
+      content: isReady 
+        ? 'TraceClause AI is now ready, ask me anything.' 
+        : "Please wait, we're preparing your contract context...",
     },
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSend = async () => {
-    if (!input.trim() || loading) return;
+    if (!input.trim() || loading || !isReady) return;
 
     const userQuery = input.trim();
     setInput('');
@@ -69,12 +72,20 @@ export const ContractChat: React.FC<ContractChatProps> = ({ contractText }) => {
         <div className="flex items-center space-x-2">
           <Sparkles className="w-5 h-5 text-indigo-500" />
           <h3 className={`font-bold text-sm ${isDark ? 'text-white' : 'text-slate-900'}`}>
-            Contract RAG Assistant
+            TraceClause AI Assistant
           </h3>
         </div>
-        <span className="text-[10px] uppercase font-mono px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 font-semibold">
-          Vector Connected
-        </span>
+        {isReady ? (
+          <span className="text-[10px] uppercase font-mono px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold flex items-center space-x-1">
+            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+            <span>Ready</span>
+          </span>
+        ) : (
+          <span className="text-[10px] uppercase font-mono px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold flex items-center space-x-1 animate-pulse">
+            <Loader2 className="w-3 h-3 text-amber-400 animate-spin" />
+            <span>Preparing Context...</span>
+          </span>
+        )}
       </div>
 
       {/* Messages */}
@@ -128,7 +139,7 @@ export const ContractChat: React.FC<ContractChatProps> = ({ contractText }) => {
         {loading && (
           <div className="flex items-center space-x-2 text-indigo-500 text-xs py-2 font-medium">
             <Loader2 className="w-4 h-4 animate-spin" />
-            <span>Scanning clause vector space...</span>
+            <span>Analyzing contract context...</span>
           </div>
         )}
       </div>
@@ -142,7 +153,8 @@ export const ContractChat: React.FC<ContractChatProps> = ({ contractText }) => {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-          placeholder="Ask a question about this contract..."
+          placeholder={isReady ? "Ask a question about this contract..." : "Please wait while context is prepared..."}
+          disabled={!isReady || loading}
           className={`flex-1 border rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-indigo-500 transition-colors ${
             isDark 
               ? 'bg-slate-900 border-slate-800 text-white placeholder-slate-500' 
@@ -151,7 +163,7 @@ export const ContractChat: React.FC<ContractChatProps> = ({ contractText }) => {
         />
         <button
           onClick={handleSend}
-          disabled={loading || !input.trim()}
+          disabled={loading || !input.trim() || !isReady}
           className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors shadow-md"
         >
           <Send className="w-4 h-4" />

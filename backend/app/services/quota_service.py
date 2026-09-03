@@ -13,6 +13,9 @@ class QuotaService:
 
     @staticmethod
     def get_supabase_client() -> Client:
+        # Use Admin Service Role Key to guarantee DB updates bypass RLS restrictions
+        if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_ROLE_KEY:
+            return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
         if settings.SUPABASE_URL and settings.SUPABASE_KEY:
             return create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
         return None
@@ -24,26 +27,51 @@ class QuotaService:
             return {"quota_used": 0, "limit": FREE_TIER_LIFETIME_LIMIT, "tier": "free"}
 
         try:
-            # Fetch user profile
-            res = client.from_("profiles").select("*").eq("id", user_id).single().execute()
-            profile = res.data
+            # Fetch or auto-create user profile
+            try:
+                res = client.from_("profiles").select("*").eq("id", user_id).single().execute()
+                profile = res.data
+            except Exception:
+                profile = None
 
             if not profile:
-                return {"quota_used": 0, "limit": FREE_TIER_LIFETIME_LIMIT, "tier": "free"}
+                try:
+                    upsert_res = client.from_("profiles").upsert({
+                        "id": user_id,
+                        "subscription_tier": "free",
+                        "lifetime_free_audits_used": 0,
+                        "weekly_quota_used": 0,
+                        "monthly_quota_used": 0
+                    }).execute()
+                    profile = upsert_res.data[0] if upsert_res.data else {"subscription_tier": "free", "lifetime_free_audits_used": 0, "weekly_quota_used": 0}
+                except Exception:
+                    profile = {"subscription_tier": "free", "lifetime_free_audits_used": 0, "weekly_quota_used": 0}
 
             tier = (profile.get("subscription_tier") or "free").lower()
             
             if tier == "free":
-                lifetime_used = profile.get("lifetime_free_audits_used", 0)
+                lifetime_used = profile.get("lifetime_free_audits_used") or profile.get("weekly_quota_used") or 0
                 if lifetime_used >= FREE_TIER_LIFETIME_LIMIT:
                     raise HTTPException(
                         status_code=429,
-                        detail="Free trial limit reached (3/3 contracts). Please upgrade to Solo or Team."
+                        detail="Free trial limit reached (3/3 contracts). Please upgrade to Solo ($79) or Team ($299)."
                     )
                 new_lifetime_used = lifetime_used + 1
-                client.from_("profiles").update({
-                    "lifetime_free_audits_used": new_lifetime_used
-                }).eq("id", user_id).execute()
+                
+                # Update both lifetime_free_audits_used and weekly_quota_used for backwards schema compatibility
+                try:
+                    client.from_("profiles").update({
+                        "lifetime_free_audits_used": new_lifetime_used,
+                        "weekly_quota_used": new_lifetime_used
+                    }).eq("id", user_id).execute()
+                except Exception as ex:
+                    print(f"Schema update fallback: {ex}")
+                    try:
+                        client.from_("profiles").update({
+                            "weekly_quota_used": new_lifetime_used
+                        }).eq("id", user_id).execute()
+                    except Exception as inner_ex:
+                        print(f"Failed fallback quota update: {inner_ex}")
 
                 return {
                     "quota_used": new_lifetime_used,

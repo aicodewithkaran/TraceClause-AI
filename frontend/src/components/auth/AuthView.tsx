@@ -77,14 +77,14 @@ export const AuthView: React.FC = () => {
   };
 
   return (
-    <div className={`min-h-screen grid grid-cols-1 lg:grid-cols-10 transition-colors duration-300 relative overflow-hidden ${
+    <div className={`min-h-screen grid grid-cols-1 lg:grid-cols-12 transition-colors duration-300 relative overflow-hidden ${
       isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
     }`}>
       {/* Motion-Sensitive Interactive Network Background Canvas */}
       <NetworkBackgroundCanvas />
 
-      {/* LEFT 70% PANEL (USPs & STATIC HIGH-TECH GRID) */}
-      <div className={`lg:col-span-7 p-8 lg:p-12 flex flex-col justify-between relative z-10 border-b lg:border-b-0 lg:border-r transition-colors ${
+      {/* LEFT PANEL (USPs & ENLARGED HIGH-TECH GRID) */}
+      <div className={`lg:col-span-7 p-8 lg:p-14 flex flex-col justify-between relative z-10 border-b lg:border-b-0 lg:border-r transition-colors ${
         isDark 
           ? 'bg-slate-950/30 border-slate-800/50' 
           : 'bg-white/30 border-slate-200/70'
@@ -97,14 +97,14 @@ export const AuthView: React.FC = () => {
         {/* Brand Header */}
         <div className="relative z-10 space-y-2">
           <div className="flex items-center space-x-3">
-            <div className="p-2.5 rounded-2xl bg-indigo-600/20 text-indigo-500 border border-indigo-500/30 shadow-lg shadow-indigo-600/10">
-              <ShieldCheck className="w-7 h-7" />
+            <div className="p-3 rounded-2xl bg-indigo-600/20 text-indigo-500 border border-indigo-500/30 shadow-lg shadow-indigo-600/10">
+              <ShieldCheck className="w-8 h-8" />
             </div>
             <div>
-              <span className={`font-black text-2xl tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              <span className={`font-black text-2xl lg:text-3xl tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
                 TraceClause AI
               </span>
-              <span className="ml-3 text-xs font-mono font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
+              <span className="ml-3 text-xs font-mono font-semibold px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
                 v2.0 Legal RAG Platform
               </span>
             </div>
@@ -112,38 +112,38 @@ export const AuthView: React.FC = () => {
         </div>
 
         {/* Main USP Hero Headline */}
-        <div className="relative z-10 max-w-2xl my-6 space-y-4">
+        <div className="relative z-10 max-w-3xl my-8 space-y-5">
           <div className="inline-flex items-center space-x-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-500 text-xs font-bold shadow-sm">
             <Sparkles className="w-4 h-4" />
             <span>AI-Powered Commercial Contract Intelligence</span>
           </div>
 
-          <h1 className={`text-3xl lg:text-4xl font-black tracking-tight leading-tight ${
+          <h1 className={`text-3xl lg:text-5xl font-black tracking-tight leading-tight ${
             isDark ? 'text-white' : 'text-slate-900'
           }`}>
             Review Contracts 10x Faster with Instant AI Clause Redlining
           </h1>
 
-          <p className={`text-xs lg:text-sm leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+          <p className={`text-sm lg:text-base leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
             TraceClause AI scans complex commercial agreements, flags hidden liabilities & uncapped indemnities, auto-generates safer counter-language, and lets you query your contracts via RAG.
           </p>
         </div>
 
-        {/* STATIC CLEAN HIGH-TECH USP GRID (No floating cards) */}
-        <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 gap-4 my-2">
+        {/* 75% ENLARGED HIGH-TECH USP GRID */}
+        <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 gap-6 my-4">
           {/* Card 1 */}
-          <div className={`p-4.5 rounded-2xl border shadow-xl transition-all ${
-            isDark ? 'bg-slate-900/75 border-slate-800/80' : 'bg-white/80 border-slate-200/80 shadow-slate-200/50'
+          <div className={`p-6 lg:p-7 rounded-3xl border shadow-2xl transition-all hover:border-emerald-500/40 ${
+            isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white/90 border-slate-200 shadow-slate-200/50'
           }`}>
-            <div className="flex items-start space-x-3">
-              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-500 flex-shrink-0">
-                <Lock className="w-5 h-5" />
+            <div className="flex flex-col sm:flex-row items-start space-y-3 sm:space-y-0 sm:space-x-4">
+              <div className="p-3.5 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0">
+                <Lock className="w-7 h-7" />
               </div>
-              <div className="space-y-0.5">
-                <h4 className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              <div className="space-y-1">
+                <h4 className={`text-sm lg:text-base font-extrabold ${isDark ? 'text-white' : 'text-slate-900'}`}>
                   Zero Storage Guarantee
                 </h4>
-                <p className={`text-[11px] leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                <p className={`text-xs lg:text-sm leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                   Files parsed in RAM memory & auto-purged immediately. 0 Bytes saved on disk.
                 </p>
               </div>
@@ -151,18 +151,18 @@ export const AuthView: React.FC = () => {
           </div>
 
           {/* Card 2 */}
-          <div className={`p-4.5 rounded-2xl border shadow-xl transition-all ${
-            isDark ? 'bg-slate-900/75 border-slate-800/80' : 'bg-white/80 border-slate-200/80 shadow-slate-200/50'
+          <div className={`p-6 lg:p-7 rounded-3xl border shadow-2xl transition-all hover:border-red-500/40 ${
+            isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white/90 border-slate-200 shadow-slate-200/50'
           }`}>
-            <div className="flex items-start space-x-3">
-              <div className="p-2.5 rounded-xl bg-red-500/10 text-red-500 flex-shrink-0">
-                <ShieldAlert className="w-5 h-5" />
+            <div className="flex flex-col sm:flex-row items-start space-y-3 sm:space-y-0 sm:space-x-4">
+              <div className="p-3.5 rounded-2xl bg-red-500/10 text-red-400 border border-red-500/20 flex-shrink-0">
+                <ShieldAlert className="w-7 h-7" />
               </div>
-              <div className="space-y-0.5">
-                <h4 className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              <div className="space-y-1">
+                <h4 className={`text-sm lg:text-base font-extrabold ${isDark ? 'text-white' : 'text-slate-900'}`}>
                   Liability Risk Scoring
                 </h4>
-                <p className={`text-[11px] leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                <p className={`text-xs lg:text-sm leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                   High, Medium & Low liability risk levels classified per section.
                 </p>
               </div>
@@ -170,18 +170,18 @@ export const AuthView: React.FC = () => {
           </div>
 
           {/* Card 3 */}
-          <div className={`p-4.5 rounded-2xl border shadow-xl transition-all ${
-            isDark ? 'bg-slate-900/75 border-slate-800/80' : 'bg-white/80 border-slate-200/80 shadow-slate-200/50'
+          <div className={`p-6 lg:p-7 rounded-3xl border shadow-2xl transition-all hover:border-indigo-500/40 ${
+            isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white/90 border-slate-200 shadow-slate-200/50'
           }`}>
-            <div className="flex items-start space-x-3">
-              <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-500 flex-shrink-0">
-                <Scale className="w-5 h-5" />
+            <div className="flex flex-col sm:flex-row items-start space-y-3 sm:space-y-0 sm:space-x-4">
+              <div className="p-3.5 rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex-shrink-0">
+                <Scale className="w-7 h-7" />
               </div>
-              <div className="space-y-0.5">
-                <h4 className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              <div className="space-y-1">
+                <h4 className={`text-sm lg:text-base font-extrabold ${isDark ? 'text-white' : 'text-slate-900'}`}>
                   Safer Counter-Language
                 </h4>
-                <p className={`text-[11px] leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                <p className={`text-xs lg:text-sm leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                   Auto-generates safer redlines ready to send counterparties.
                 </p>
               </div>
@@ -189,18 +189,18 @@ export const AuthView: React.FC = () => {
           </div>
 
           {/* Card 4 */}
-          <div className={`p-4.5 rounded-2xl border shadow-xl transition-all ${
-            isDark ? 'bg-slate-900/75 border-slate-800/80' : 'bg-white/80 border-slate-200/80 shadow-slate-200/50'
+          <div className={`p-6 lg:p-7 rounded-3xl border shadow-2xl transition-all hover:border-amber-500/40 ${
+            isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white/90 border-slate-200 shadow-slate-200/50'
           }`}>
-            <div className="flex items-start space-x-3">
-              <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-500 flex-shrink-0">
-                <FileText className="w-5 h-5" />
+            <div className="flex flex-col sm:flex-row items-start space-y-3 sm:space-y-0 sm:space-x-4">
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex-shrink-0">
+                <FileText className="w-7 h-7" />
               </div>
-              <div className="space-y-0.5">
-                <h4 className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              <div className="space-y-1">
+                <h4 className={`text-sm lg:text-base font-extrabold ${isDark ? 'text-white' : 'text-slate-900'}`}>
                   Semantic Vector Indexing
                 </h4>
-                <p className={`text-[11px] leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                <p className={`text-xs lg:text-sm leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                   1536-dim Gemini MRL embeddings & interactive RAG contract search.
                 </p>
               </div>
@@ -209,18 +209,18 @@ export const AuthView: React.FC = () => {
         </div>
 
         {/* USP Trust Indicators Footer */}
-        <div className={`relative z-10 pt-4 border-t flex flex-wrap items-center justify-between gap-4 text-xs ${
+        <div className={`relative z-10 pt-6 border-t flex flex-wrap items-center justify-between gap-4 text-xs font-semibold ${
           isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-500'
         }`}>
-          <span className="flex items-center space-x-1.5"><CheckCircle2 className="w-4 h-4 text-emerald-500" /><span>Zero Raw File Disk Storage</span></span>
-          <span className="flex items-center space-x-1.5"><CheckCircle2 className="w-4 h-4 text-emerald-500" /><span>SOC-2 Aligned User Isolation</span></span>
-          <span className="flex items-center space-x-1.5"><CheckCircle2 className="w-4 h-4 text-emerald-500" /><span>Dual RAG Vector Engine</span></span>
+          <span className="flex items-center space-x-2"><CheckCircle2 className="w-4.5 h-4.5 text-emerald-500" /><span>Zero Raw File Disk Storage</span></span>
+          <span className="flex items-center space-x-2"><CheckCircle2 className="w-4.5 h-4.5 text-emerald-500" /><span>SOC-2 Aligned User Isolation</span></span>
+          <span className="flex items-center space-x-2"><CheckCircle2 className="w-4.5 h-4.5 text-emerald-500" /><span>Dual RAG Vector Engine</span></span>
         </div>
       </div>
 
-      {/* RIGHT 30% PANEL (SIGNUP / LOGIN FORMS) */}
-      <div className={`lg:col-span-3 p-8 lg:p-10 flex flex-col justify-center relative z-10 overflow-y-auto transition-colors ${
-        isDark ? 'bg-slate-900/85 border-l border-slate-800/80' : 'bg-white/90 border-l border-slate-200'
+      {/* RIGHT PANEL (SIGNUP / LOGIN FORMS) */}
+      <div className={`lg:col-span-5 p-8 lg:p-12 flex flex-col justify-center relative z-10 overflow-y-auto transition-colors ${
+        isDark ? 'bg-slate-900/90 border-l border-slate-800' : 'bg-white/95 border-l border-slate-200'
       }`}>
         <div className="w-full max-w-sm mx-auto space-y-6">
           {/* Header Controls */}

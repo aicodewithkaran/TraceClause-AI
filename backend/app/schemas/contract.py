@@ -17,11 +17,18 @@ class AnalysisSummary(BaseModel):
     low_risks: int
     overall_risk_score: str
 
+class QuotaInfo(BaseModel):
+    quota_used: int
+    limit: int
+    tier: str
+    remaining: int
+
 class ContractAnalysisResponse(BaseModel):
     file_name: str
     extracted_text: str
     summary: AnalysisSummary
     clauses: List[ClauseAnalysis]
+    quota_info: Optional[QuotaInfo] = None
 
 class DocumentExtractResponse(BaseModel):
     filename: str

@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { ContractAnalysisResponse } from '@/types/contract';
 import { ClauseCard } from './ClauseCard';
 import { ContractChat } from '../chat/ContractChat';
-import { FileText, ArrowLeft, MessageSquare, ListFilter } from 'lucide-react';
+import { FileText, ArrowLeft, MessageSquare, ListFilter, Plus } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
 
 interface SplitViewProps {
@@ -46,8 +46,16 @@ export const SplitView: React.FC<SplitViewProps> = ({ analysis, onReset }) => {
           </p>
         </div>
 
-        {/* Score Pill Badges */}
+        {/* Actions & Score Pill Badges */}
         <div className="flex items-center space-x-3">
+          <button
+            onClick={onReset}
+            className="flex items-center space-x-1.5 px-3.5 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-md"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Audit</span>
+          </button>
+
           <div className={`text-center px-4 py-2 rounded-2xl border ${
             isDark ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'
           }`}>

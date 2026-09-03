@@ -52,18 +52,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
   if (!isOpen) return null;
 
-  const usageCount = profile?.weekly_quota_used || 0;
   const currentTier = (profile?.subscription_tier || 'free').toLowerCase();
 
   // Tier Matrix Setup
-  let tierLimit = 14;
-  let tierLabel = 'Free Tier';
-  if (currentTier === 'pro') {
-    tierLimit = 50;
-    tierLabel = 'Pro Tier';
-  } else if (currentTier === 'enterprise') {
-    tierLimit = 999999;
-    tierLabel = 'Enterprise Tier';
+  let tierLimit = 3;
+  let tierLabel = 'Free Trial Tier (3 Audits)';
+  let usageLabel = 'Lifetime Free Audits Used:';
+  let usageCount = profile?.lifetime_free_audits_used ?? profile?.weekly_quota_used ?? 0;
+
+  if (currentTier === 'solo') {
+    tierLimit = 20;
+    tierLabel = 'Solo Plan ($79/mo)';
+    usageLabel = 'Monthly Review Usage:';
+    usageCount = profile?.monthly_quota_used || 0;
+  } else if (currentTier === 'team') {
+    tierLimit = 100;
+    tierLabel = 'Team Plan ($299/mo)';
+    usageLabel = 'Monthly Review Usage:';
+    usageCount = profile?.monthly_quota_used || 0;
   }
 
   const isUnlimited = currentTier === 'enterprise';
@@ -150,8 +156,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
     try {
       if (user) {
+        // Call backend API to permanently purge user from Supabase Auth & database
+        const { apiClient } = await import('@/lib/api-client');
+        await apiClient.deleteAccount();
+
+        // Delete user's report history & profile from database as extra precaution
+        await supabase.from('contract_reports').delete().eq('user_id', user.id);
         await supabase.from('profiles').delete().eq('id', user.id);
+        
+        // Clear all cached storage & auth sessions
+        localStorage.clear();
+        sessionStorage.clear();
+        await supabase.auth.signOut();
         await logout();
+        
         onClose();
         alert('Your account and all associated data have been permanently deleted.');
       }
@@ -244,7 +262,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
               {/* Progress Quota Bar */}
               <div className="space-y-1">
                 <div className="flex justify-between text-[11px]">
-                  <span className={isDark ? 'text-slate-300' : 'text-slate-600'}>Weekly Review Usage:</span>
+                  <span className={isDark ? 'text-slate-300' : 'text-slate-600'}>{usageLabel}</span>
                   <span className="font-bold font-mono text-indigo-500">
                     {usageCount} / {isUnlimited ? 'Unlimited' : tierLimit}
                   </span>

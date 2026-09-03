@@ -5,8 +5,10 @@ export interface UserProfile {
   country: string;
   profession: string;
   phone_number?: string;
-  subscription_tier: 'free' | 'pro' | 'enterprise';
-  weekly_quota_used: number;
+  subscription_tier: 'free' | 'solo' | 'team' | 'pro' | 'enterprise';
+  weekly_quota_used?: number;
+  lifetime_free_audits_used?: number;
+  monthly_quota_used?: number;
   created_at?: string;
 }
 

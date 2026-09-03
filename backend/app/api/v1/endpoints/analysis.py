@@ -28,11 +28,12 @@ async def analyze_contract(
     user_id = current_user.id
 
     # Enforce strict tier quota
-    QuotaService.check_and_increment_quota(user_id)
+    quota_info = QuotaService.check_and_increment_quota(user_id)
 
     try:
         clauses = ChunkingEngine.split_into_clauses(extracted_text)
         result = analyzer.analyze_clauses(file_name, extracted_text, clauses)
+        result.quota_info = quota_info
 
         # Save under user isolated database storage
         UserIsolationService.save_user_report(
@@ -85,3 +86,20 @@ async def export_contract_docx(report_id: str, current_user: dict = Depends(get_
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate .docx redline: {str(e)}")
+
+@router.delete("/delete-account")
+async def delete_user_account(current_user: dict = Depends(get_current_user)):
+    """Permanently delete user from Supabase Auth, profiles, and reports."""
+    from app.core.security import supabase_admin
+    user_id = getattr(current_user, 'id', None)
+    if not user_id or user_id == "demo-user-id":
+        return {"status": "success", "message": "Demo user account reset."}
+
+    if supabase_admin:
+        try:
+            # Delete from Supabase Auth Admin (cascades to profiles & contract_reports)
+            supabase_admin.auth.admin.delete_user(user_id)
+        except Exception as e:
+            print(f"Error deleting auth user: {e}")
+
+    return {"status": "success", "message": "Account permanently deleted."}

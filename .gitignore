@@ -48,3 +48,8 @@ out/
 
 # Internal Documentation
 docs/
+
+# Sample Contracts
+sample_contracts/
+/sample_contracts
+
