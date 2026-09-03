@@ -1,180 +1,236 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Check, CreditCard, Sparkles, X } from 'lucide-react';
-import axios from 'axios';
+import { Check, Sparkles, X, Users, User, ArrowRight, ShieldCheck, Zap } from 'lucide-react';
 
 interface PricingModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-interface RazorpayResponse {
-  razorpay_order_id: string;
-  razorpay_payment_id: string;
-  razorpay_signature: string;
-}
-
 export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) => {
-  // Razorpay set as single primary gateway on frontend (Stripe backend preserved)
-  const [provider] = useState<'stripe' | 'razorpay'>('razorpay');
   const [loading, setLoading] = useState(false);
-  const [userEmail, setUserEmail] = useState('');
 
   if (!isOpen) return null;
 
-  const handleCheckout = async (planTier: 'solo' | 'team') => {
-    if (!userEmail) {
-      alert('Please enter your email address for receipt and plan activation.');
-      return;
-    }
-
+  const handleCheckout = (planTier: 'solo' | 'team') => {
     setLoading(true);
-    try {
-      if (provider === 'stripe') {
-        const res = await axios.post('http://localhost:8000/api/v1/payments/stripe/create-checkout-session', {
-          plan_tier: planTier,
-          user_email: userEmail,
-        });
-        if (res.data.checkout_url) {
-          window.location.href = res.data.checkout_url;
-        }
-      } else {
-        const amountUsd = planTier === 'solo' ? 79 : 299;
-        const orderRes = await axios.post('http://localhost:8000/api/v1/payments/razorpay/create-order', {
-          plan_tier: planTier,
-          amount_usd: amountUsd,
-          user_email: userEmail,
-        });
+    
+    // Read hosted Razorpay payment page URLs from environment variables
+    const soloLink = process.env.NEXT_PUBLIC_RAZORPAY_SOLO_LINK || 'https://razorpay.com';
+    const teamLink = process.env.NEXT_PUBLIC_RAZORPAY_TEAM_LINK || 'https://razorpay.com';
+    const targetLink = planTier === 'solo' ? soloLink : teamLink;
 
-        const options = {
-          key: orderRes.data.key_id,
-          amount: orderRes.data.amount,
-          currency: orderRes.data.currency || 'USD',
-          name: 'TraceClause AI',
-          description: `${planTier.toUpperCase()} Plan Subscription ($${amountUsd}/mo)`,
-          order_id: orderRes.data.order_id,
-          handler: async function (response: RazorpayResponse) {
-            await axios.post('http://localhost:8000/api/v1/payments/razorpay/verify', {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              user_email: userEmail,
-            });
-            alert('Payment Verified! Your subscription is active.');
-            onClose();
-          },
-          prefill: { email: userEmail },
-          theme: { color: '#4f46e5' },
-        };
-
-        const rzp = new (window as unknown as { Razorpay: new (opts: unknown) => { open: () => void } }).Razorpay(options);
-        rzp.open();
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Server error';
-      alert(`Checkout initiation failed: ${message}`);
-    } finally {
-      setLoading(false);
-    }
+    // Redirect user directly to the Razorpay Payment Page
+    window.location.href = targetLink;
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-3xl w-full p-6 space-y-6 relative shadow-2xl">
+    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-xl flex items-center justify-center p-4 overflow-y-auto">
+      {/* Glow ambient background sphere */}
+      <div className="absolute w-[600px] h-[600px] bg-purple-600/20 blur-[180px] rounded-full pointer-events-none" />
+
+      <div className="bg-slate-900/90 border border-slate-800/80 rounded-3xl max-w-3xl w-full p-6 lg:p-8 space-y-6 relative shadow-2xl backdrop-blur-2xl text-slate-100 my-auto">
+        {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-white bg-slate-800/50"
+          className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:text-white bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
 
-        {/* Title */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-semibold border border-indigo-500/20">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Upgrade TraceClause AI</span>
+        {/* Header */}
+        <div className="text-center space-y-2 max-w-xl mx-auto">
+          <div className="inline-flex items-center space-x-1.5 px-3.5 py-1 rounded-full bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-purple-500/10 text-purple-400 text-xs font-bold border border-purple-500/20 shadow-sm">
+            <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+            <span>Launch Special Pricing — Limited Time</span>
           </div>
-          <h3 className="text-2xl font-bold text-white">Choose Your B2B Plan</h3>
-          <p className="text-xs text-slate-400">
-            Instant subscription access via secure Razorpay checkout (USD).
+          <h3 className="text-3xl font-black tracking-tight text-white">
+            Supercharge Your Legal Audits
+          </h3>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Choose the plan that fits your monthly contract review volume. Instant activation via secure Razorpay checkout.
           </p>
         </div>
 
-        {/* Email Input */}
-        <div className="space-y-4 bg-slate-950 p-4 rounded-2xl border border-slate-800">
-          <div>
-            <label className="text-xs font-semibold text-slate-300 block mb-1">Your Account Email</label>
-            <input
-              type="email"
-              value={userEmail}
-              onChange={(e) => setUserEmail(e.target.value)}
-              placeholder="alex@company.com"
-              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-            />
-          </div>
+        {/* Pricing Cards Grid (Awwwards Web3 Dark Theme Inspired) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+          
+          {/* ================= SOLO PLAN CARD ================= */}
+          <div className="p-6 rounded-3xl bg-slate-950/80 border border-slate-800 hover:border-indigo-500/40 transition-all duration-300 relative flex flex-col justify-between group shadow-xl">
+            {/* Ambient inner glow */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 blur-3xl rounded-full pointer-events-none" />
 
-          <div className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300">
-            <div className="flex items-center space-x-2">
-              <CreditCard className="w-4 h-4 text-indigo-400" />
-              <span className="font-semibold">Razorpay Secure Checkout</span>
-            </div>
-            <span className="font-mono text-[11px] text-indigo-400 font-bold">USD Global</span>
-          </div>
-        </div>
+            <div className="space-y-4 relative z-10">
+              {/* Header & Badges */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                      <User className="w-4 h-4" />
+                    </div>
+                    <h4 className="font-extrabold text-white text-lg">Solo Plan</h4>
+                  </div>
+                  <span className="text-[11px] font-mono text-slate-400 bg-slate-900 px-2.5 py-1 rounded-full border border-slate-800 flex items-center space-x-1">
+                    <span>1 User Seat</span>
+                  </span>
+                </div>
 
-        {/* Tier Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Solo Tier */}
-          <div className="p-5 rounded-2xl bg-slate-950 border border-indigo-500/30 space-y-3 relative flex flex-col justify-between">
-            <div className="space-y-3">
-              <h4 className="font-bold text-white text-base">Solo Plan</h4>
-              <p className="text-2xl font-extrabold text-indigo-400">
-                $79 <span className="text-xs font-normal text-slate-400">/ month</span>
-              </p>
-              <ul className="text-xs text-slate-300 space-y-2">
-                <li className="flex items-center space-x-2"><Check className="w-3.5 h-3.5 text-indigo-400" /><span>1 Seat</span></li>
-                <li className="flex items-center space-x-2"><Check className="w-3.5 h-3.5 text-indigo-400" /><span>20 Reviews / month</span></li>
-                <li className="flex items-center space-x-2"><Check className="w-3.5 h-3.5 text-indigo-400" /><span>AI Redline Counter-Language</span></li>
-                <li className="flex items-center space-x-2"><Check className="w-3.5 h-3.5 text-indigo-400" /><span>Interactive RAG Chat</span></li>
-                <li className="flex items-center space-x-2"><Check className="w-3.5 h-3.5 text-indigo-400" /><span>Export Redlined Word (.docx)</span></li>
+                {/* Animated Launch Special Badge */}
+                <div>
+                  <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse shadow-sm shadow-amber-500/10">
+                    <Zap className="w-3 h-3 text-amber-400 fill-amber-400" />
+                    <span>Save 34% (Launch Special)</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Price Anchoring & Strikethrough */}
+              <div className="pt-2">
+                <div className="flex items-baseline space-x-2">
+                  <span className="text-slate-500 line-through text-sm font-semibold tracking-wider">
+                    $119/mo
+                  </span>
+                  <span className="text-3xl font-black text-white tracking-tight">
+                    $79
+                  </span>
+                  <span className="text-xs text-slate-400 font-medium">/ month</span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Ideal for solo practitioners, attorneys & consultants.
+                </p>
+              </div>
+
+              <div className="h-px bg-slate-800/80 my-3" />
+
+              {/* Features List */}
+              <ul className="text-xs text-slate-300 space-y-2.5">
+                <li className="flex items-center space-x-2.5">
+                  <Check className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                  <span className="font-medium">20 Contract Audits / month</span>
+                </li>
+                <li className="flex items-center space-x-2.5">
+                  <Check className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                  <span>AI Redline Counter-Language</span>
+                </li>
+                <li className="flex items-center space-x-2.5">
+                  <Check className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                  <span>Interactive RAG Contract Chat</span>
+                </li>
+                <li className="flex items-center space-x-2.5">
+                  <Check className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                  <span>Export Redlined Word (.docx)</span>
+                </li>
+                <li className="flex items-center space-x-2.5">
+                  <Check className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                  <span>Standard Email Support (24-48h)</span>
+                </li>
               </ul>
             </div>
+
+            {/* CTA Button */}
             <button
               onClick={() => handleCheckout('solo')}
               disabled={loading}
-              className="w-full mt-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition-colors"
+              className="w-full mt-6 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/40 hover:scale-[1.02] flex items-center justify-center space-x-2"
             >
-              Subscribe to Solo ($79/mo)
+              <span>Choose Solo Plan ($79/mo)</span>
+              <ArrowRight className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Team Tier */}
-          <div className="p-5 rounded-2xl bg-slate-950 border border-emerald-500/30 space-y-3 relative flex flex-col justify-between">
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <h4 className="font-bold text-white text-base">Team Plan</h4>
-                <span className="bg-emerald-500/10 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/20">Up to 4 Seats</span>
+          {/* ================= TEAM PLAN CARD (FEATURED / MOST POPULAR) ================= */}
+          <div className="p-6 rounded-3xl bg-gradient-to-b from-slate-900 via-slate-950 to-slate-950 border-2 border-purple-500/50 hover:border-purple-400 transition-all duration-300 relative flex flex-col justify-between group shadow-2xl shadow-purple-500/15 scale-[1.02]">
+            
+            {/* Floating "Most Popular" Pill Badge */}
+            <div className="absolute -top-3.5 right-6">
+              <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-gradient-to-r from-purple-600 to-indigo-600 text-white border border-purple-400/40 shadow-lg shadow-purple-500/30 flex items-center space-x-1">
+                <Sparkles className="w-3 h-3 text-amber-300 fill-amber-300" />
+                <span>Most Popular</span>
+              </span>
+            </div>
+
+            {/* Top Glowing Ambient Sphere */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-24 bg-purple-500/15 blur-2xl rounded-full pointer-events-none" />
+
+            <div className="space-y-4 relative z-10">
+              {/* Header & Badges */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <div className="p-2 rounded-xl bg-purple-500/15 text-purple-400 border border-purple-500/30">
+                      <Users className="w-4 h-4" />
+                    </div>
+                    <h4 className="font-extrabold text-white text-lg">Team Plan</h4>
+                  </div>
+                  <span className="text-[11px] font-mono font-bold text-purple-300 bg-purple-500/10 px-2.5 py-1 rounded-full border border-purple-500/30 flex items-center space-x-1">
+                    <span>Up to 4 User Seats</span>
+                  </span>
+                </div>
+
+                {/* Animated Founder Tier Badge */}
+                <div>
+                  <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-purple-500/25 via-indigo-500/25 to-purple-500/25 text-purple-300 border border-purple-500/40 animate-pulse shadow-sm shadow-purple-500/20">
+                    <ShieldCheck className="w-3 h-3 text-purple-300" />
+                    <span>Save 25% (Founder Tier)</span>
+                  </span>
+                </div>
               </div>
-              <p className="text-2xl font-extrabold text-emerald-400">
-                $299 <span className="text-xs font-normal text-slate-400">/ month</span>
-              </p>
-              <ul className="text-xs text-slate-300 space-y-2">
-                <li className="flex items-center space-x-2"><Check className="w-3.5 h-3.5 text-emerald-400" /><span>4 Seats included</span></li>
-                <li className="flex items-center space-x-2"><Check className="w-3.5 h-3.5 text-emerald-400" /><span>100 Reviews / month (Pooled)</span></li>
-                <li className="flex items-center space-x-2"><Check className="w-3.5 h-3.5 text-emerald-400" /><span>Shared Workspace & Reports</span></li>
-                <li className="flex items-center space-x-2"><Check className="w-3.5 h-3.5 text-emerald-400" /><span>Custom Playbook Rules</span></li>
-                <li className="flex items-center space-x-2"><Check className="w-3.5 h-3.5 text-emerald-400" /><span>Priority Support (&lt;12h SLA)</span></li>
+
+              {/* Price Anchoring & Strikethrough */}
+              <div className="pt-2">
+                <div className="flex items-baseline space-x-2">
+                  <span className="text-slate-500 line-through text-sm font-semibold tracking-wider">
+                    $399/mo
+                  </span>
+                  <span className="text-3xl font-black text-white tracking-tight">
+                    $299
+                  </span>
+                  <span className="text-xs text-purple-300 font-medium">/ month</span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Built for legal teams, law firms & corporate procurement.
+                </p>
+              </div>
+
+              <div className="h-px bg-slate-800/80 my-3" />
+
+              {/* Features List */}
+              <ul className="text-xs text-slate-200 space-y-2.5">
+                <li className="flex items-center space-x-2.5 font-semibold text-white">
+                  <Check className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                  <span>4 User Seats included</span>
+                </li>
+                <li className="flex items-center space-x-2.5 font-semibold text-white">
+                  <Check className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                  <span>100 Contract Audits / month (Pooled)</span>
+                </li>
+                <li className="flex items-center space-x-2.5">
+                  <Check className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                  <span>Shared Team Workspace & Reports</span>
+                </li>
+                <li className="flex items-center space-x-2.5">
+                  <Check className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                  <span>Custom Playbook Risk Rules</span>
+                </li>
+                <li className="flex items-center space-x-2.5">
+                  <Check className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                  <span>Priority SLA Support (&lt;12h Response)</span>
+                </li>
               </ul>
             </div>
+
+            {/* Glowing Orange/Purple CTA Button (inspired by reference image) */}
             <button
               onClick={() => handleCheckout('team')}
               disabled={loading}
-              className="w-full mt-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-colors"
+              className="w-full mt-6 py-3.5 rounded-2xl bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 hover:from-orange-400 hover:to-amber-500 text-white font-black text-xs transition-all shadow-xl shadow-orange-500/25 hover:shadow-orange-500/40 hover:scale-[1.02] flex items-center justify-center space-x-2"
             >
-              Subscribe to Team ($299/mo)
+              <span>Choose Team Plan ($299/mo)</span>
+              <ArrowRight className="w-4 h-4" />
             </button>
           </div>
+
         </div>
       </div>
     </div>

@@ -32,11 +32,13 @@ class Settings(BaseSettings):
     SUPABASE_KEY: Optional[str] = ""
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = ""
     
-    # Payment Gateway Keys
+    # Payment Gateway Keys & Hosted Payment Links
     STRIPE_SECRET_KEY: Optional[str] = ""
     STRIPE_WEBHOOK_SECRET: Optional[str] = ""
     RAZORPAY_KEY_ID: Optional[str] = ""
     RAZORPAY_KEY_SECRET: Optional[str] = ""
+    RAZORPAY_SOLO_LINK: Optional[str] = "https://razorpay.com"
+    RAZORPAY_TEAM_LINK: Optional[str] = "https://razorpay.com"
 
     class Config:
         env_file = ".env"
