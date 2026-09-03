@@ -68,21 +68,21 @@ class PaymentService:
 
     def create_razorpay_order(self, req: RazorpayOrderRequest) -> RazorpayOrderResponse:
         tier = req.plan_tier.lower()
-        amount_inr = 27999 if tier == 'team' else 7499 # ₹27,999 or ₹7,499
-        amount_paise = amount_inr * 100 # Convert to Paise
+        amount_usd = req.amount_usd or (299 if tier == 'team' else 79)
+        amount_cents = amount_usd * 100 # Convert to Cents for USD
 
         if not self.razorpay_client:
             # Return demo mock order if keys not configured
             return RazorpayOrderResponse(
                 order_id="order_demo_98765",
-                amount=amount_paise,
-                currency="INR",
+                amount=amount_cents,
+                currency="USD",
                 key_id=settings.RAZORPAY_KEY_ID or "rzp_test_demo"
             )
 
         order_data = {
-            'amount': amount_paise,
-            'currency': 'INR',
+            'amount': amount_cents,
+            'currency': 'USD',
             'receipt': f"receipt_{req.user_email}",
             'notes': {
                 'plan_tier': req.plan_tier,
@@ -96,7 +96,7 @@ class PaymentService:
             order_id=order['id'],
             amount=order['amount'],
             currency=order['currency'],
-            key_id=settings.RAZORPAY_KEY_ID
+            key_id=settings.RAZORPAY_KEY_ID or "rzp_test_demo"
         )
 
     def verify_razorpay_signature(self, req: RazorpayVerificationRequest) -> bool:

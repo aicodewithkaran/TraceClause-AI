@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Check, Globe, CreditCard, Sparkles, X } from 'lucide-react';
+import { Check, CreditCard, Sparkles, X } from 'lucide-react';
 import axios from 'axios';
 
 interface PricingModalProps {
@@ -16,7 +16,8 @@ interface RazorpayResponse {
 }
 
 export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) => {
-  const [provider, setProvider] = useState<'stripe' | 'razorpay'>('stripe');
+  // Razorpay set as single primary gateway on frontend (Stripe backend preserved)
+  const [provider] = useState<'stripe' | 'razorpay'>('razorpay');
   const [loading, setLoading] = useState(false);
   const [userEmail, setUserEmail] = useState('');
 
@@ -39,19 +40,19 @@ export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) =
           window.location.href = res.data.checkout_url;
         }
       } else {
-        const amountInr = planTier === 'solo' ? 7499 : 27999;
+        const amountUsd = planTier === 'solo' ? 79 : 299;
         const orderRes = await axios.post('http://localhost:8000/api/v1/payments/razorpay/create-order', {
           plan_tier: planTier,
-          amount_inr: amountInr,
+          amount_usd: amountUsd,
           user_email: userEmail,
         });
 
         const options = {
           key: orderRes.data.key_id,
           amount: orderRes.data.amount,
-          currency: orderRes.data.currency,
+          currency: orderRes.data.currency || 'USD',
           name: 'TraceClause AI',
-          description: `${planTier.toUpperCase()} Plan Subscription`,
+          description: `${planTier.toUpperCase()} Plan Subscription ($${amountUsd}/mo)`,
           order_id: orderRes.data.order_id,
           handler: async function (response: RazorpayResponse) {
             await axios.post('http://localhost:8000/api/v1/payments/razorpay/verify', {
@@ -96,11 +97,11 @@ export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) =
           </div>
           <h3 className="text-2xl font-bold text-white">Choose Your B2B Plan</h3>
           <p className="text-xs text-slate-400">
-            Select Stripe for USD International Cards or Razorpay for INR / UPI payments.
+            Instant subscription access via secure Razorpay checkout (USD).
           </p>
         </div>
 
-        {/* Email & Gateway Selector */}
+        {/* Email Input */}
         <div className="space-y-4 bg-slate-950 p-4 rounded-2xl border border-slate-800">
           <div>
             <label className="text-xs font-semibold text-slate-300 block mb-1">Your Account Email</label>
@@ -113,33 +114,12 @@ export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) =
             />
           </div>
 
-          <div>
-            <label className="text-xs font-semibold text-slate-300 block mb-1">Select Payment Provider</label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => setProvider('stripe')}
-                className={`p-3 rounded-xl border text-xs flex items-center justify-center space-x-2 font-medium transition-all ${
-                  provider === 'stripe'
-                    ? 'bg-indigo-600/20 border-indigo-500 text-white'
-                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-                }`}
-              >
-                <Globe className="w-4 h-4 text-indigo-400" />
-                <span>Stripe (USD / Global)</span>
-              </button>
-
-              <button
-                onClick={() => setProvider('razorpay')}
-                className={`p-3 rounded-xl border text-xs flex items-center justify-center space-x-2 font-medium transition-all ${
-                  provider === 'razorpay'
-                    ? 'bg-indigo-600/20 border-indigo-500 text-white'
-                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-                }`}
-              >
-                <CreditCard className="w-4 h-4 text-emerald-400" />
-                <span>Razorpay (INR / UPI / India)</span>
-              </button>
+          <div className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300">
+            <div className="flex items-center space-x-2">
+              <CreditCard className="w-4 h-4 text-indigo-400" />
+              <span className="font-semibold">Razorpay Secure Checkout</span>
             </div>
+            <span className="font-mono text-[11px] text-indigo-400 font-bold">USD Global</span>
           </div>
         </div>
 
@@ -150,7 +130,7 @@ export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) =
             <div className="space-y-3">
               <h4 className="font-bold text-white text-base">Solo Plan</h4>
               <p className="text-2xl font-extrabold text-indigo-400">
-                {provider === 'stripe' ? '$79 / mo' : '₹7,499 / mo'}
+                $79 <span className="text-xs font-normal text-slate-400">/ month</span>
               </p>
               <ul className="text-xs text-slate-300 space-y-2">
                 <li className="flex items-center space-x-2"><Check className="w-3.5 h-3.5 text-indigo-400" /><span>1 Seat</span></li>
@@ -177,7 +157,7 @@ export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) =
                 <span className="bg-emerald-500/10 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/20">Up to 4 Seats</span>
               </div>
               <p className="text-2xl font-extrabold text-emerald-400">
-                {provider === 'stripe' ? '$299 / mo' : '₹27,999 / mo'}
+                $299 <span className="text-xs font-normal text-slate-400">/ month</span>
               </p>
               <ul className="text-xs text-slate-300 space-y-2">
                 <li className="flex items-center space-x-2"><Check className="w-3.5 h-3.5 text-emerald-400" /><span>4 Seats included</span></li>

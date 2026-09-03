@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { COUNTRIES_LIST } from '@/lib/countries';
-import { InteractiveMotionGraphic } from './InteractiveMotionGraphic';
+import { NetworkBackgroundCanvas } from '@/components/ui/NetworkBackgroundCanvas';
 import { 
   ShieldCheck, 
   Sparkles, 
@@ -18,7 +18,10 @@ import {
   Loader2,
   ArrowRight,
   ShieldAlert,
-  PenTool
+  PenTool,
+  Lock,
+  Scale,
+  FileText
 } from 'lucide-react';
 
 export const AuthView: React.FC = () => {
@@ -74,12 +77,17 @@ export const AuthView: React.FC = () => {
   };
 
   return (
-    <div className={`min-h-screen grid grid-cols-1 lg:grid-cols-10 transition-colors duration-300 ${
+    <div className={`min-h-screen grid grid-cols-1 lg:grid-cols-10 transition-colors duration-300 relative overflow-hidden ${
       isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
     }`}>
-      {/* LEFT 70% PANEL (USPs & INTERACTIVE MOTION GRAPHIC) */}
-      <div className={`lg:col-span-7 p-8 lg:p-12 flex flex-col justify-between relative overflow-hidden border-b lg:border-b-0 lg:border-r ${
-        isDark ? 'bg-slate-950 border-slate-800/80' : 'bg-gradient-to-br from-indigo-50/60 via-slate-50 to-white border-slate-200'
+      {/* Motion-Sensitive Interactive Network Background Canvas */}
+      <NetworkBackgroundCanvas />
+
+      {/* LEFT 70% PANEL (USPs & STATIC HIGH-TECH GRID) */}
+      <div className={`lg:col-span-7 p-8 lg:p-12 flex flex-col justify-between relative z-10 border-b lg:border-b-0 lg:border-r transition-colors ${
+        isDark 
+          ? 'bg-slate-950/30 border-slate-800/50' 
+          : 'bg-white/30 border-slate-200/70'
       }`}>
         {/* Glow Background Layer */}
         <div className={`absolute top-0 left-0 w-[600px] h-[600px] blur-[160px] pointer-events-none rounded-full ${
@@ -121,9 +129,83 @@ export const AuthView: React.FC = () => {
           </p>
         </div>
 
-        {/* INTERACTIVE MOUSE-TRACKING MOTION GRAPHIC (Fills Remaining Space!) */}
-        <div className="relative z-10 my-2">
-          <InteractiveMotionGraphic />
+        {/* STATIC CLEAN HIGH-TECH USP GRID (No floating cards) */}
+        <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 gap-4 my-2">
+          {/* Card 1 */}
+          <div className={`p-4.5 rounded-2xl border shadow-xl transition-all ${
+            isDark ? 'bg-slate-900/75 border-slate-800/80' : 'bg-white/80 border-slate-200/80 shadow-slate-200/50'
+          }`}>
+            <div className="flex items-start space-x-3">
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-500 flex-shrink-0">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div className="space-y-0.5">
+                <h4 className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  Zero Storage Guarantee
+                </h4>
+                <p className={`text-[11px] leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Files parsed in RAM memory & auto-purged immediately. 0 Bytes saved on disk.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2 */}
+          <div className={`p-4.5 rounded-2xl border shadow-xl transition-all ${
+            isDark ? 'bg-slate-900/75 border-slate-800/80' : 'bg-white/80 border-slate-200/80 shadow-slate-200/50'
+          }`}>
+            <div className="flex items-start space-x-3">
+              <div className="p-2.5 rounded-xl bg-red-500/10 text-red-500 flex-shrink-0">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div className="space-y-0.5">
+                <h4 className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  Liability Risk Scoring
+                </h4>
+                <p className={`text-[11px] leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  High, Medium & Low liability risk levels classified per section.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3 */}
+          <div className={`p-4.5 rounded-2xl border shadow-xl transition-all ${
+            isDark ? 'bg-slate-900/75 border-slate-800/80' : 'bg-white/80 border-slate-200/80 shadow-slate-200/50'
+          }`}>
+            <div className="flex items-start space-x-3">
+              <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-500 flex-shrink-0">
+                <Scale className="w-5 h-5" />
+              </div>
+              <div className="space-y-0.5">
+                <h4 className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  Safer Counter-Language
+                </h4>
+                <p className={`text-[11px] leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Auto-generates safer redlines ready to send counterparties.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4 */}
+          <div className={`p-4.5 rounded-2xl border shadow-xl transition-all ${
+            isDark ? 'bg-slate-900/75 border-slate-800/80' : 'bg-white/80 border-slate-200/80 shadow-slate-200/50'
+          }`}>
+            <div className="flex items-start space-x-3">
+              <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-500 flex-shrink-0">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div className="space-y-0.5">
+                <h4 className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  Semantic Vector Indexing
+                </h4>
+                <p className={`text-[11px] leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  1536-dim Gemini MRL embeddings & interactive RAG contract search.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* USP Trust Indicators Footer */}
@@ -137,8 +219,8 @@ export const AuthView: React.FC = () => {
       </div>
 
       {/* RIGHT 30% PANEL (SIGNUP / LOGIN FORMS) */}
-      <div className={`lg:col-span-3 p-8 lg:p-10 flex flex-col justify-center relative overflow-y-auto ${
-        isDark ? 'bg-slate-900/90' : 'bg-white'
+      <div className={`lg:col-span-3 p-8 lg:p-10 flex flex-col justify-center relative z-10 overflow-y-auto transition-colors ${
+        isDark ? 'bg-slate-900/85 border-l border-slate-800/80' : 'bg-white/90 border-l border-slate-200'
       }`}>
         <div className="w-full max-w-sm mx-auto space-y-6">
           {/* Header Controls */}

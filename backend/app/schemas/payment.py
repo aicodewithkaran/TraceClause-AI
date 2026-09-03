@@ -12,8 +12,9 @@ class StripeCheckoutResponse(BaseModel):
     session_id: str
 
 class RazorpayOrderRequest(BaseModel):
-    plan_tier: str = Field(..., description="pro or enterprise")
-    amount_inr: int = Field(..., description="Amount in INR (e.g. 1999 for ₹1999)")
+    plan_tier: str = Field(..., description="solo or team")
+    amount_usd: Optional[int] = Field(79, description="Amount in USD (e.g. 79 for $79)")
+    amount_inr: Optional[int] = Field(None, description="Legacy Amount in INR")
     user_email: str
 
 class RazorpayOrderResponse(BaseModel):
