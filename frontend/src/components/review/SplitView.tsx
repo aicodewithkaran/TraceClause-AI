@@ -4,8 +4,9 @@ import React, { useState } from 'react';
 import { ContractAnalysisResponse } from '@/types/contract';
 import { ClauseCard } from './ClauseCard';
 import { ContractChat } from '../chat/ContractChat';
-import { FileText, ArrowLeft, MessageSquare, ListFilter, Plus } from 'lucide-react';
+import { FileText, ArrowLeft, MessageSquare, ListFilter, Plus, Lock } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
+import { useAuth } from '@/context/AuthContext';
 
 interface SplitViewProps {
   analysis: ContractAnalysisResponse;
@@ -14,7 +15,9 @@ interface SplitViewProps {
 
 export const SplitView: React.FC<SplitViewProps> = ({ analysis, onReset }) => {
   const { theme } = useTheme();
+  const { profile } = useAuth();
   const isDark = theme === 'dark';
+  const tier = (profile?.subscription_tier || 'free').toLowerCase();
   const [filter, setFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM' | 'LOW'>('ALL');
   const [activeTab, setActiveTab] = useState<'CLAUSES' | 'CHAT'>('CLAUSES');
 
@@ -126,6 +129,12 @@ export const SplitView: React.FC<SplitViewProps> = ({ analysis, onReset }) => {
               >
                 <MessageSquare className="w-3.5 h-3.5" />
                 <span>RAG Assistant</span>
+                {tier === 'free' && (
+                  <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 font-mono font-bold border border-amber-500/30 flex items-center space-x-0.5">
+                    <Lock className="w-2.5 h-2.5 mr-0.5" />
+                    <span>Solo/Team</span>
+                  </span>
+                )}
               </button>
             </div>
 

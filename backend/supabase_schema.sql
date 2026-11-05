@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 );
 
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS subscription_expires_at TIMESTAMPTZ;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
 -- 2.2 Workspaces Table
 CREATE TABLE IF NOT EXISTS public.workspaces (
@@ -328,6 +329,8 @@ DECLARE
   v_user_name TEXT;
   v_workspace_id UUID;
 BEGIN
+  PERFORM set_config('app.internal_mutation', 'true', true);
+
   -- 1. Idempotency Check on Webhook Event ID
   IF p_event_id IS NOT NULL THEN
     IF EXISTS (SELECT 1 FROM public.processed_webhooks WHERE event_id = p_event_id) THEN
@@ -455,6 +458,8 @@ DECLARE
   v_owner_id UUID;
   v_owner_profile public.profiles%ROWTYPE;
 BEGIN
+  PERFORM set_config('app.internal_mutation', 'true', true);
+
   -- 1. Exclusively lock the caller profile row
   SELECT * INTO v_caller_profile
   FROM public.profiles
@@ -703,6 +708,8 @@ DECLARE
   v_job public.contract_analysis_jobs%ROWTYPE;
   v_res public.quota_reservations%ROWTYPE;
 BEGIN
+  PERFORM set_config('app.internal_mutation', 'true', true);
+
   UPDATE public.contract_analysis_jobs
   SET status = 'failed',
       error_message = p_error_msg,
@@ -826,7 +833,219 @@ $$;
 REVOKE ALL ON FUNCTION public.accept_terms_of_service(TEXT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.accept_terms_of_service(TEXT) TO authenticated;
 
--- 7.9 Profile Protection Trigger (Defense-in-Depth)
+-- 7.9 Synchronous Quota Ledger Stored Procedures (reserve_quota, release_quota, commit_quota)
+CREATE OR REPLACE FUNCTION public.reserve_quota(p_user_id UUID, p_audit_id UUID)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_tier TEXT;
+  v_lifetime_used INT;
+  v_monthly_used INT;
+  v_last_reset TIMESTAMPTZ;
+  v_expires_at TIMESTAMPTZ;
+  v_limit INT;
+  v_target_profile_id UUID := p_user_id;
+  v_workspace_id UUID;
+  v_owner_id UUID;
+  v_result JSONB;
+BEGIN
+  PERFORM set_config('app.internal_mutation', 'true', true);
+
+  -- Row-lock caller profile to prevent race conditions
+  SELECT 
+    COALESCE(LOWER(subscription_tier), 'free'),
+    COALESCE(lifetime_free_audits_used, 0),
+    COALESCE(monthly_quota_used, 0),
+    last_quota_reset,
+    subscription_expires_at
+  INTO 
+    v_tier, 
+    v_lifetime_used, 
+    v_monthly_used, 
+    v_last_reset,
+    v_expires_at
+  FROM public.profiles
+  WHERE id = p_user_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'USER_NOT_FOUND' USING ERRCODE = 'P0002';
+  END IF;
+
+  -- Revert expired paid tiers to free
+  IF v_tier IN ('solo', 'team') AND v_expires_at IS NOT NULL AND v_expires_at < clock_timestamp() THEN
+    v_tier := 'free';
+  END IF;
+
+  -- Free Tier: 3 Lifetime Audits
+  IF v_tier = 'free' THEN
+    IF COALESCE(v_lifetime_used, 0) >= 3 THEN
+      RAISE EXCEPTION 'QUOTA_EXCEEDED: Free trial limit reached (3/3 contracts)' USING ERRCODE = 'P0001';
+    END IF;
+
+    UPDATE public.profiles
+    SET lifetime_free_audits_used = COALESCE(lifetime_free_audits_used, 0) + 1
+    WHERE id = p_user_id;
+
+    INSERT INTO public.quota_reservations(user_id, target_profile_id, audit_id, tier, status)
+    VALUES (p_user_id, p_user_id, p_audit_id, 'free', 'reserved')
+    ON CONFLICT (audit_id) DO NOTHING;
+
+    SELECT jsonb_build_object(
+      'quota_used', lifetime_free_audits_used,
+      'limit', 3,
+      'tier', 'free',
+      'remaining', 3 - lifetime_free_audits_used
+    ) INTO v_result
+    FROM public.profiles
+    WHERE id = p_user_id;
+
+    RETURN v_result;
+  END IF;
+
+  -- Paid Tiers: Solo (20) or Team (100)
+  IF v_tier = 'solo' THEN
+    v_limit := 20;
+  ELSIF v_tier = 'team' THEN
+    v_limit := 100;
+    -- Check if user is in a shared team workspace to pool usage under owner
+    SELECT workspace_id INTO v_workspace_id
+    FROM public.workspace_members
+    WHERE user_id = p_user_id
+    LIMIT 1;
+
+    IF v_workspace_id IS NOT NULL THEN
+      SELECT owner_id INTO v_owner_id
+      FROM public.workspaces
+      WHERE id = v_workspace_id;
+
+      IF v_owner_id IS NOT NULL AND v_owner_id <> p_user_id THEN
+        v_target_profile_id := v_owner_id;
+        -- Lock owner profile
+        SELECT 
+          COALESCE(LOWER(subscription_tier), 'free'),
+          COALESCE(monthly_quota_used, 0),
+          last_quota_reset,
+          subscription_expires_at
+        INTO 
+          v_tier, 
+          v_monthly_used, 
+          v_last_reset,
+          v_expires_at
+        FROM public.profiles
+        WHERE id = v_target_profile_id
+        FOR UPDATE;
+
+        IF v_expires_at IS NOT NULL AND v_expires_at < clock_timestamp() THEN
+          RAISE EXCEPTION 'Team workspace owner subscription is expired' USING ERRCODE = 'P0003';
+        END IF;
+      END IF;
+    END IF;
+  ELSE
+    v_limit := 3;
+  END IF;
+
+  -- 30-day reset check
+  IF v_last_reset IS NULL OR clock_timestamp() > (v_last_reset + INTERVAL '30 days') THEN
+    v_monthly_used := 0;
+    UPDATE public.profiles
+    SET monthly_quota_used = 0, last_quota_reset = clock_timestamp()
+    WHERE id = v_target_profile_id;
+  END IF;
+
+  IF COALESCE(v_monthly_used, 0) >= v_limit THEN
+    RAISE EXCEPTION 'QUOTA_EXCEEDED: Monthly contract review limit reached' USING ERRCODE = 'P0001';
+  END IF;
+
+  UPDATE public.profiles
+  SET monthly_quota_used = COALESCE(monthly_quota_used, 0) + 1
+  WHERE id = v_target_profile_id;
+
+  INSERT INTO public.quota_reservations(user_id, target_profile_id, audit_id, tier, status)
+  VALUES (p_user_id, v_target_profile_id, p_audit_id, v_tier, 'reserved')
+  ON CONFLICT (audit_id) DO NOTHING;
+
+  SELECT jsonb_build_object(
+    'quota_used', monthly_quota_used,
+    'limit', v_limit,
+    'tier', v_tier,
+    'remaining', v_limit - monthly_quota_used
+  ) INTO v_result
+  FROM public.profiles
+  WHERE id = v_target_profile_id;
+
+  RETURN v_result;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.reserve_quota(UUID, UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.reserve_quota(UUID, UUID) TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.release_quota(p_user_id UUID, p_audit_id UUID)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_res RECORD;
+BEGIN
+  PERFORM set_config('app.internal_mutation', 'true', true);
+
+  -- Lock and find the specific reservation
+  SELECT id, target_profile_id, tier, status
+  INTO v_res
+  FROM public.quota_reservations
+  WHERE user_id = p_user_id AND audit_id = p_audit_id AND status = 'reserved'
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  -- Mark reservation released
+  UPDATE public.quota_reservations
+  SET status = 'released'
+  WHERE id = v_res.id;
+
+  -- Safely decrement usage on target profile
+  IF v_res.tier = 'free' THEN
+    UPDATE public.profiles
+    SET lifetime_free_audits_used = GREATEST(0, COALESCE(lifetime_free_audits_used, 1) - 1)
+    WHERE id = v_res.target_profile_id;
+  ELSE
+    UPDATE public.profiles
+    SET monthly_quota_used = GREATEST(0, COALESCE(monthly_quota_used, 1) - 1)
+    WHERE id = v_res.target_profile_id;
+  END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.release_quota(UUID, UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.release_quota(UUID, UUID) TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.commit_quota(p_user_id UUID, p_audit_id UUID)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  PERFORM set_config('app.internal_mutation', 'true', true);
+
+  UPDATE public.quota_reservations
+  SET status = 'completed'
+  WHERE user_id = p_user_id AND audit_id = p_audit_id AND status = 'reserved';
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.commit_quota(UUID, UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.commit_quota(UUID, UUID) TO authenticated, service_role;
+
+-- 7.10 Profile Protection Trigger (Defense-in-Depth)
 CREATE OR REPLACE FUNCTION public.protect_profile_subscription_fields()
 RETURNS TRIGGER 
 LANGUAGE plpgsql 
@@ -834,20 +1053,30 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 BEGIN
-  IF current_setting('request.jwt.claim.role', true) IS DISTINCT FROM 'service_role' THEN
-    IF NEW.subscription_tier IS DISTINCT FROM OLD.subscription_tier THEN
-      RAISE EXCEPTION 'Forbidden: subscription_tier can only be updated by verified payment gateway.';
-    END IF;
-    IF NEW.lifetime_free_audits_used IS DISTINCT FROM OLD.lifetime_free_audits_used THEN
-      RAISE EXCEPTION 'Forbidden: lifetime_free_audits_used cannot be altered directly.';
-    END IF;
-    IF NEW.monthly_quota_used IS DISTINCT FROM OLD.monthly_quota_used THEN
-      RAISE EXCEPTION 'Forbidden: monthly_quota_used cannot be altered directly.';
-    END IF;
-    IF NEW.subscription_expires_at IS DISTINCT FROM OLD.subscription_expires_at THEN
-      RAISE EXCEPTION 'Forbidden: subscription_expires_at cannot be altered directly.';
-    END IF;
+  -- 1. Allow internal mutations executed by trusted SECURITY DEFINER functions in this transaction
+  IF current_setting('app.internal_mutation', true) = 'true' THEN
+    RETURN NEW;
   END IF;
+
+  -- 2. Allow if executing under service_role key
+  IF current_setting('request.jwt.claim.role', true) = 'service_role' THEN
+    RETURN NEW;
+  END IF;
+
+  -- 3. Otherwise, reject any attempt to alter protected subscription and quota fields
+  IF NEW.subscription_tier IS DISTINCT FROM OLD.subscription_tier THEN
+    RAISE EXCEPTION 'Forbidden: subscription_tier can only be updated by verified payment gateway.';
+  END IF;
+  IF NEW.lifetime_free_audits_used IS DISTINCT FROM OLD.lifetime_free_audits_used THEN
+    RAISE EXCEPTION 'Forbidden: lifetime_free_audits_used cannot be altered directly.';
+  END IF;
+  IF NEW.monthly_quota_used IS DISTINCT FROM OLD.monthly_quota_used THEN
+    RAISE EXCEPTION 'Forbidden: monthly_quota_used cannot be altered directly.';
+  END IF;
+  IF NEW.subscription_expires_at IS DISTINCT FROM OLD.subscription_expires_at THEN
+    RAISE EXCEPTION 'Forbidden: subscription_expires_at cannot be altered directly.';
+  END IF;
+
   RETURN NEW;
 END;
 $$;
