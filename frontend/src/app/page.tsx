@@ -6,16 +6,18 @@ import { SplitView } from '@/components/review/SplitView';
 import { PaymentModal } from '@/components/pricing/PaymentModal';
 import { SettingsModal } from '@/components/settings/SettingsModal';
 import { AuthModal } from '@/components/auth/AuthModal';
+import { TermsAcceptanceModal } from '@/components/auth/TermsAcceptanceModal';
 import { GlobalBackgroundCanvas } from '@/components/ui/GlobalBackgroundCanvas';
 import { ContractAnalysisResponse } from '@/types/contract';
 import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
+import { CURRENT_LEGAL_VERSION } from '@/lib/constants';
 import { apiClient } from '@/lib/api-client';
-import { Shield, Sparkles, Scale, FileSearch, CreditCard, Sun, Moon, LogOut, User as UserIcon, Loader2, Settings, Lock, FileText, Clock, ArrowUpRight, History, Download, Search, Plus, Zap, CheckCircle2, FileCode, Layers, ArrowRight, Rocket } from 'lucide-react';
+import { Shield, Sparkles, Scale, FileSearch, CreditCard, Sun, Moon, LogOut, User as UserIcon, Loader2, Settings, Lock, FileText, Clock, ArrowUpRight, History, Download, Search, Plus, Zap, CheckCircle2, FileCode, Layers, ArrowRight, Rocket, Trash2 } from 'lucide-react';
 
 export default function Home() {
   const { theme, toggleTheme } = useTheme();
-  const { user, profile, logout, refreshProfile, loading } = useAuth();
+  const { user, profile, logout, refreshProfile, loading, acceptTermsAndPrivacy } = useAuth();
   const isDark = theme === 'dark';
 
   const [activeTab, setActiveTab] = useState<'analyzer' | 'history'>('analyzer');
@@ -28,6 +30,17 @@ export default function Home() {
   const [historySearchQuery, setHistorySearchQuery] = useState('');
 
   const dropzoneRef = useRef<HTMLDivElement>(null);
+
+  // Check if logged-in user needs to accept / re-accept Terms of Service & Privacy Policy
+  const needsTermsAcceptance = Boolean(user && profile && profile.tos_accepted_version !== CURRENT_LEGAL_VERSION);
+  const isUpdateNotice = Boolean(user && profile && profile.tos_accepted_version && profile.tos_accepted_version !== CURRENT_LEGAL_VERSION);
+
+  // Automatically close Auth modal upon successful login / signup
+  useEffect(() => {
+    if (user) {
+      setIsAuthOpen(false);
+    }
+  }, [user]);
 
   // 1. Session Persistence: Load active analysis on page refresh
   useEffect(() => {
@@ -91,6 +104,18 @@ export default function Home() {
     }
   };
 
+  const handleDeleteReport = async (reportId: string) => {
+    if (!window.confirm("Are you sure you want to permanently delete this contract report from your Audit Vault? This action cannot be undone.")) {
+      return;
+    }
+    try {
+      await apiClient.deleteReport(reportId);
+      await fetchHistory();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Failed to delete contract report.");
+    }
+  };
+
   const scrollToDropzone = () => {
     if (dropzoneRef.current) {
       dropzoneRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -124,10 +149,16 @@ export default function Home() {
       {/* PERSISTENT GLOBAL BACKGROUND GRAPHIC CANVAS */}
       <GlobalBackgroundCanvas />
 
-      {/* Payment, Settings, and Auth Modals */}
+      {/* Payment, Settings, Auth, and Mandatory Legal Modals */}
       <PaymentModal isOpen={isPaymentOpen} onClose={() => setIsPaymentOpen(false)} />
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
+      <TermsAcceptanceModal
+        isOpen={needsTermsAcceptance}
+        onAccept={acceptTermsAndPrivacy}
+        isUpdateNotice={isUpdateNotice}
+        allowClose={false}
+      />
 
       {/* Navigation Header */}
       <header className={`border-b backdrop-blur-xl sticky top-0 z-50 transition-colors relative ${isDark ? 'border-slate-800/80 bg-slate-950/80' : 'border-slate-200 bg-white/80'
@@ -609,14 +640,23 @@ export default function Home() {
                             </div>
                           </div>
                         </div>
-                        <span className={`text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full border ${report.overall_risk_score === 'HIGH RISK'
-                            ? 'bg-red-500/10 text-red-400 border-red-500/30'
-                            : report.overall_risk_score === 'MEDIUM RISK'
-                              ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                          }`}>
-                          {report.overall_risk_score}
-                        </span>
+                        <div className="flex items-center space-x-1.5">
+                          <span className={`text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full border ${report.overall_risk_score === 'HIGH RISK'
+                              ? 'bg-red-500/10 text-red-400 border-red-500/30'
+                              : report.overall_risk_score === 'MEDIUM RISK'
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                            }`}>
+                            {report.overall_risk_score}
+                          </span>
+                          <button
+                            onClick={() => handleDeleteReport(report.id)}
+                            title="Delete report permanently"
+                            className="p-1 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     </div>
 

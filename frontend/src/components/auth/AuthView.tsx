@@ -23,13 +23,19 @@ import {
   Scale,
   FileText
 } from 'lucide-react';
+import { TermsAcceptanceModal } from './TermsAcceptanceModal';
 
-export const AuthView: React.FC = () => {
+interface AuthViewProps {
+  onSuccess?: () => void;
+  initialMode?: 'signin' | 'signup';
+}
+
+export const AuthView: React.FC<AuthViewProps> = ({ onSuccess, initialMode = 'signin' }) => {
   const { login, signup } = useAuth();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +47,9 @@ export const AuthView: React.FC = () => {
   const [professionSelect, setProfessionSelect] = useState('Legal Counsel / Attorney');
   const [customProfession, setCustomProfession] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [tosAccepted, setTosAccepted] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [termsModalTab, setTermsModalTab] = useState<'tos' | 'privacy'>('tos');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,11 +59,18 @@ export const AuthView: React.FC = () => {
     try {
       if (mode === 'signin') {
         await login({ email, password });
+        onSuccess?.();
       } else {
         const finalProfession = professionSelect === 'Other' ? customProfession.trim() : professionSelect;
 
         if (!fullName || !email || !password || !country || !finalProfession) {
           setError('Please fill in all mandatory fields (*)');
+          setLoading(false);
+          return;
+        }
+
+        if (!tosAccepted) {
+          setError('You must agree to the Terms of Service and Privacy Policy to sign up.');
           setLoading(false);
           return;
         }
@@ -66,7 +82,9 @@ export const AuthView: React.FC = () => {
           country,
           profession: finalProfession,
           phone_number: phoneNumber,
+          tos_accepted: true,
         });
+        onSuccess?.();
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Authentication failed. Please try again.';
@@ -212,7 +230,7 @@ export const AuthView: React.FC = () => {
         <div className={`relative z-10 pt-6 border-t flex flex-wrap items-center justify-between gap-4 text-xs font-semibold ${
           isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-500'
         }`}>
-          <span className="flex items-center space-x-2"><CheckCircle2 className="w-4.5 h-4.5 text-emerald-500" /><span>Zero Raw File Disk Storage</span></span>
+          <span className="flex items-center space-x-2"><CheckCircle2 className="w-4.5 h-4.5 text-emerald-500" /><span>In-Memory Parsing & Private Vault</span></span>
           <span className="flex items-center space-x-2"><CheckCircle2 className="w-4.5 h-4.5 text-emerald-500" /><span>SOC-2 Aligned User Isolation</span></span>
           <span className="flex items-center space-x-2"><CheckCircle2 className="w-4.5 h-4.5 text-emerald-500" /><span>Dual RAG Vector Engine</span></span>
         </div>
@@ -413,6 +431,36 @@ export const AuthView: React.FC = () => {
               </div>
             </div>
 
+            {mode === 'signup' && (
+              <div className="flex items-start space-x-2.5 pt-2">
+                <input
+                  type="checkbox"
+                  id="tos-signup-checkbox"
+                  checked={tosAccepted}
+                  onChange={(e) => setTosAccepted(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-700 bg-slate-950 text-indigo-600 focus:ring-indigo-500 cursor-pointer flex-shrink-0"
+                />
+                <label htmlFor="tos-signup-checkbox" className={`text-[11px] leading-tight select-none ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                  I agree to the{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setTermsModalTab('tos'); setShowTermsModal(true); }}
+                    className="text-indigo-400 font-extrabold hover:underline"
+                  >
+                    Terms of Service
+                  </button>{' '}
+                  and{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setTermsModalTab('privacy'); setShowTermsModal(true); }}
+                    className="text-indigo-400 font-extrabold hover:underline"
+                  >
+                    Privacy Policy
+                  </button>. <span className="text-red-500">*</span>
+                </label>
+              </div>
+            )}
+
             {error && (
               <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center space-x-2">
                 <ShieldAlert className="w-4 h-4 flex-shrink-0" />
@@ -422,7 +470,7 @@ export const AuthView: React.FC = () => {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || (mode === 'signup' && !tosAccepted)}
               className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-all shadow-lg shadow-indigo-600/20 disabled:opacity-50 mt-2"
             >
               {loading ? (
@@ -437,6 +485,14 @@ export const AuthView: React.FC = () => {
           </form>
         </div>
       </div>
+
+      {/* Legal Document Viewer Modal */}
+      <TermsAcceptanceModal
+        isOpen={showTermsModal}
+        allowClose={true}
+        onClose={() => setShowTermsModal(false)}
+        defaultTab={termsModalTab}
+      />
     </div>
   );
 };

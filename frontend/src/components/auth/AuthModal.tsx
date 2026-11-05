@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { AuthView } from './AuthView';
 import { X } from 'lucide-react';
 import { useTheme } from '@/context/ThemeContext';
+import { useAuth } from '@/context/AuthContext';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -11,9 +12,17 @@ interface AuthModalProps {
   initialMode?: 'signin' | 'signup';
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode }) => {
   const { theme } = useTheme();
+  const { user } = useAuth();
   const isDark = theme === 'dark';
+
+  // Automatically close modal as soon as user authentication succeeds
+  useEffect(() => {
+    if (user && isOpen) {
+      onClose();
+    }
+  }, [user, isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -30,7 +39,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         >
           <X className="w-4 h-4" />
         </button>
-        <AuthView />
+        <AuthView onSuccess={onClose} initialMode={initialMode} />
       </div>
     </div>
   );

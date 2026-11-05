@@ -1,5 +1,5 @@
 from fastapi import Depends, HTTPException, status
-from app.core.security import get_current_user, supabase_client
+from app.core.security import get_current_user, AuthenticatedUser, supabase_client
 
 TIER_PERMISSIONS = {
     "free": {
@@ -24,11 +24,21 @@ TIER_PERMISSIONS = {
     }
 }
 
-async def get_current_profile(current_user = Depends(get_current_user)) -> dict:
+async def get_current_profile(current_user: AuthenticatedUser = Depends(get_current_user)) -> dict:
     """
     Retrieves user profile from public.profiles table including subscription tier and quota details.
     """
     user_id = current_user.id
+    if not supabase_client:
+        return {
+            "id": user_id,
+            "email": current_user.email or "",
+            "subscription_tier": "free",
+            "lifetime_free_audits_used": 0,
+            "monthly_quota_used": 0,
+            "auth_user": current_user
+        }
+
     try:
         res = supabase_client.table("profiles").select("*").eq("id", user_id).execute()
         if res.data and len(res.data) > 0:
@@ -36,20 +46,20 @@ async def get_current_profile(current_user = Depends(get_current_user)) -> dict:
             profile["auth_user"] = current_user
             return profile
         else:
-            # Fallback default profile if record not found yet
+            # Fallback default profile if record not found yet in profiles
             return {
                 "id": user_id,
-                "email": getattr(current_user, "email", ""),
+                "email": current_user.email or "",
                 "subscription_tier": "free",
                 "lifetime_free_audits_used": 0,
                 "monthly_quota_used": 0,
                 "auth_user": current_user
             }
     except Exception as e:
-        print(f"Error fetching user profile: {e}")
+        # Avoid logging sensitive information
         return {
             "id": user_id,
-            "email": getattr(current_user, "email", ""),
+            "email": current_user.email or "",
             "subscription_tier": "free",
             "lifetime_free_audits_used": 0,
             "monthly_quota_used": 0,

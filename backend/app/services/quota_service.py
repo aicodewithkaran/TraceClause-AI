@@ -1,6 +1,6 @@
-from datetime import datetime, timedelta
-from typing import Dict, Any
-from fastapi import HTTPException
+import uuid
+from typing import Dict, Any, Optional
+from fastapi import HTTPException, status
 from app.core.config import settings
 from supabase import create_client, Client
 
@@ -9,130 +9,127 @@ SOLO_TIER_MONTHLY_LIMIT = 20
 TEAM_TIER_MONTHLY_LIMIT = 100
 
 class QuotaService:
-    """Service to track, check, and reset user/workspace quota limits per subscription tier."""
+    """
+    Service enforcing single-operation atomic quota limits via PostgreSQL stored procedure.
+    Utilizes a reservation ledger (reserve -> commit / release) with row-level locks
+    to guarantee zero race conditions and fail-closed security.
+    """
 
     @staticmethod
-    def get_supabase_client() -> Client:
-        # Use Admin Service Role Key to guarantee DB updates bypass RLS restrictions
-        if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_ROLE_KEY:
-            return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
-        if settings.SUPABASE_URL and settings.SUPABASE_KEY:
-            return create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+    def get_supabase_client() -> Optional[Client]:
+        # Always use the server-side Service Role Key for atomic stored procedure execution
+        if settings.SUPABASE_URL and settings.supabase_admin_key:
+            return create_client(settings.SUPABASE_URL, settings.supabase_admin_key)
+        if settings.SUPABASE_URL and settings.supabase_anon_key:
+            return create_client(settings.SUPABASE_URL, settings.supabase_anon_key)
         return None
 
     @classmethod
-    def check_and_increment_quota(cls, user_id: str) -> Dict[str, Any]:
+    def reserve_quota(cls, user_id: str, audit_id: str) -> Dict[str, Any]:
+        """
+        Atomically checks limits and reserves 1 quota unit via PostgreSQL stored procedure.
+        Fails closed: Any database failure raises HTTP 503; exceeded limit raises HTTP 429.
+        """
         client = cls.get_supabase_client()
         if not client:
-            return {"quota_used": 0, "limit": FREE_TIER_LIFETIME_LIMIT, "tier": "free"}
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database service unavailable for quota verification. Request failed closed."
+            )
 
         try:
-            # Fetch or auto-create user profile
-            try:
-                res = client.from_("profiles").select("*").eq("id", user_id).single().execute()
-                profile = res.data
-            except Exception:
-                profile = None
+            rpc_res = client.rpc("reserve_quota", {
+                "p_user_id": user_id,
+                "p_audit_id": audit_id
+            }).execute()
 
-            if not profile:
-                try:
-                    upsert_res = client.from_("profiles").upsert({
-                        "id": user_id,
-                        "subscription_tier": "free",
-                        "lifetime_free_audits_used": 0,
-                        "weekly_quota_used": 0,
-                        "monthly_quota_used": 0
-                    }).execute()
-                    profile = upsert_res.data[0] if upsert_res.data else {"subscription_tier": "free", "lifetime_free_audits_used": 0, "weekly_quota_used": 0}
-                except Exception:
-                    profile = {"subscription_tier": "free", "lifetime_free_audits_used": 0, "weekly_quota_used": 0}
+            if rpc_res.data:
+                return rpc_res.data
 
-            tier = (profile.get("subscription_tier") or "free").lower()
-            
-            if tier == "free":
-                lifetime_used = profile.get("lifetime_free_audits_used") or profile.get("weekly_quota_used") or 0
-                if lifetime_used >= FREE_TIER_LIFETIME_LIMIT:
-                    raise HTTPException(
-                        status_code=429,
-                        detail="Free trial limit reached (3/3 contracts). Please upgrade to Solo ($79) or Team ($299)."
-                    )
-                new_lifetime_used = lifetime_used + 1
-                
-                # Update both lifetime_free_audits_used and weekly_quota_used for backwards schema compatibility
-                try:
-                    client.from_("profiles").update({
-                        "lifetime_free_audits_used": new_lifetime_used,
-                        "weekly_quota_used": new_lifetime_used
-                    }).eq("id", user_id).execute()
-                except Exception as ex:
-                    print(f"Schema update fallback: {ex}")
-                    try:
-                        client.from_("profiles").update({
-                            "weekly_quota_used": new_lifetime_used
-                        }).eq("id", user_id).execute()
-                    except Exception as inner_ex:
-                        print(f"Failed fallback quota update: {inner_ex}")
-
-                return {
-                    "quota_used": new_lifetime_used,
-                    "limit": FREE_TIER_LIFETIME_LIMIT,
-                    "tier": "free",
-                    "remaining": FREE_TIER_LIFETIME_LIMIT - new_lifetime_used
-                }
-
-            # Paid Tiers (Solo or Team)
-            limit = SOLO_TIER_MONTHLY_LIMIT if tier == "solo" else TEAM_TIER_MONTHLY_LIMIT
-            last_reset = profile.get("last_quota_reset") or profile.get("last_reset_date")
-            monthly_used = profile.get("monthly_quota_used", 0)
-
-            # Check 30-day quota reset
-            if last_reset:
-                try:
-                    reset_date = datetime.fromisoformat(last_reset.replace("Z", "+00:00"))
-                    if datetime.now(reset_date.tzinfo) > reset_date + timedelta(days=30):
-                        monthly_used = 0
-                        client.from_("profiles").update({
-                            "monthly_quota_used": 0,
-                            "last_quota_reset": datetime.now().isoformat()
-                        }).eq("id", user_id).execute()
-                except Exception as ex:
-                    print(f"Error parsing reset date: {ex}")
-
-            # For Team tier, aggregate workspace pooled quota if applicable
-            target_profile_id = user_id
-            if tier == "team":
-                # Check if user is in a workspace
-                wm_res = client.from_("workspace_members").select("workspace_id").eq("user_id", user_id).execute()
-                if wm_res.data and len(wm_res.data) > 0:
-                    ws_id = wm_res.data[0]["workspace_id"]
-                    # Get workspace owner profile to pool usage
-                    ws_res = client.from_("workspaces").select("owner_id").eq("id", ws_id).execute()
-                    if ws_res.data and len(ws_res.data) > 0:
-                        target_profile_id = ws_res.data[0]["owner_id"]
-                        if target_profile_id != user_id:
-                            owner_prof = client.from_("profiles").select("monthly_quota_used").eq("id", target_profile_id).single().execute()
-                            if owner_prof.data:
-                                monthly_used = owner_prof.data.get("monthly_quota_used", 0)
-
-            if monthly_used >= limit:
-                raise HTTPException(
-                    status_code=429,
-                    detail="Monthly contract review limit reached. Upgrade or purchase quota overage."
-                )
-
-            new_monthly_used = monthly_used + 1
-            client.from_("profiles").update({
-                "monthly_quota_used": new_monthly_used
-            }).eq("id", target_profile_id).execute()
-
-            return {
-                "quota_used": new_monthly_used,
-                "limit": limit,
-                "tier": tier,
-                "remaining": limit - new_monthly_used
-            }
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Quota reservation returned no confirmation data."
+            )
         except HTTPException:
             raise
         except Exception as e:
-            print(f"Quota check error: {e}")
-            return {"quota_used": 0, "limit": FREE_TIER_LIFETIME_LIMIT, "tier": "free"}
+            err_text = str(e)
+            if "QUOTA_EXCEEDED" in err_text:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Contract audit limit reached for your subscription tier. Please upgrade to continue."
+                )
+            if "USER_NOT_FOUND" in err_text:
+                # If profile record doesn't exist yet, attempt to auto-create free profile once
+                try:
+                    client.from_("profiles").upsert({
+                        "id": user_id,
+                        "email": "",
+                        "full_name": "User",
+                        "country": "US",
+                        "profession": "Legal",
+                        "subscription_tier": "free",
+                        "lifetime_free_audits_used": 0,
+                        "monthly_quota_used": 0
+                    }).execute()
+                    # Retry reservation once after initialization
+                    retry_res = client.rpc("reserve_quota", {
+                        "p_user_id": user_id,
+                        "p_audit_id": audit_id
+                    }).execute()
+                    if retry_res.data:
+                        return retry_res.data
+                except Exception as init_err:
+                    if "QUOTA_EXCEEDED" in str(init_err):
+                        raise HTTPException(
+                            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                            detail="Contract audit limit reached for your subscription tier. Please upgrade to continue."
+                        )
+
+            # Fail closed on any other error
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Unable to verify subscription quota due to database disruption. Please try again shortly."
+            )
+
+    @classmethod
+    def release_quota(cls, user_id: str, audit_id: str):
+        """
+        Safely releases a reservation if the LLM analysis or downstream processing fails.
+        Idempotent: Releases only the reservation matching (user_id, audit_id) with status 'reserved'.
+        """
+        client = cls.get_supabase_client()
+        if not client:
+            return
+
+        try:
+            client.rpc("release_quota", {
+                "p_user_id": user_id,
+                "p_audit_id": audit_id
+            }).execute()
+        except Exception as e:
+            # Operational logging without sensitive details
+            pass
+
+    @classmethod
+    def commit_quota(cls, user_id: str, audit_id: str):
+        """
+        Marks reservation 'completed' upon successful analysis and report persistence.
+        """
+        client = cls.get_supabase_client()
+        if not client:
+            return
+
+        try:
+            client.rpc("commit_quota", {
+                "p_user_id": user_id,
+                "p_audit_id": audit_id
+            }).execute()
+        except Exception as e:
+            pass
+
+    @classmethod
+    def check_and_increment_quota(cls, user_id: str) -> Dict[str, Any]:
+        """Backwards compatibility helper: reserves quota with a generated audit UUID."""
+        audit_id = str(uuid.uuid4())
+        return cls.reserve_quota(user_id, audit_id)

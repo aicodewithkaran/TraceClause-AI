@@ -60,7 +60,7 @@ class VectorStoreService:
                     for data in res.data:
                         all_embeddings.append(data.embedding)
                 except Exception as e:
-                    print(f"OpenAI batch embedding error: {e}")
+                    # Sanitize logging: never log contract texts or embeddings
                     all_embeddings.extend([[0.0] * 1536 for _ in batch_texts])
 
             elif self.embedding_provider == "gemini" and self.gemini_client:
@@ -75,7 +75,7 @@ class VectorStoreService:
                         values = list(emb.values)
                         all_embeddings.append(values)
                 except Exception as e:
-                    print(f"Gemini batch embedding error: {e}")
+                    # Sanitize logging: never log contract texts or embeddings
                     all_embeddings.extend([[0.0] * 1536 for _ in batch_texts])
             else:
                 all_embeddings.extend([[0.0] * 1536 for _ in batch_texts])

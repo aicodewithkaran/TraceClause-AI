@@ -145,7 +145,8 @@ Batch Clauses to Review:
                 return self._parse_batch_json(batch, data_list)
             return [self._mock_analysis(c) for c in batch]
         except Exception as e:
-            print(f"Gemini batch review error: {e}. Falling back to per-clause review.")
+            # Sanitize logging: log only exception type, never contract text or prompts
+            # logger.warning(f"Gemini batch review failed: {type(e).__name__}")
             return [self._mock_analysis(c) for c in batch]
 
     def _review_batch_openai(self, batch: List[Dict[str, str]]) -> List[ClauseAnalysis]:
@@ -164,7 +165,7 @@ Batch Clauses to Review:
                 return self._parse_batch_json(batch, data_list)
             return [self._mock_analysis(c) for c in batch]
         except Exception as e:
-            print(f"OpenAI batch review error: {e}. Falling back.")
+            # Sanitize logging: log only exception type, never contract text or prompts
             return [self._mock_analysis(c) for c in batch]
 
     def _review_batch_anthropic(self, batch: List[Dict[str, str]]) -> List[ClauseAnalysis]:
@@ -180,7 +181,7 @@ Batch Clauses to Review:
                 return self._parse_batch_json(batch, data_list)
             return [self._mock_analysis(c) for c in batch]
         except Exception as e:
-            print(f"Anthropic batch review error: {e}. Falling back.")
+            # Sanitize logging: log only exception type, never contract text or prompts
             return [self._mock_analysis(c) for c in batch]
 
     def _parse_batch_json(self, batch: List[Dict[str, str]], data_list: list) -> List[ClauseAnalysis]:

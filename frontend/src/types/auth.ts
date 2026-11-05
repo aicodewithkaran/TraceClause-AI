@@ -9,6 +9,8 @@ export interface UserProfile {
   weekly_quota_used?: number;
   lifetime_free_audits_used?: number;
   monthly_quota_used?: number;
+  tos_accepted_at?: string;
+  tos_accepted_version?: string;
   created_at?: string;
 }
 
@@ -19,6 +21,7 @@ export interface SignupRequest {
   country: string;
   profession: string;
   phone_number?: string;
+  tos_accepted?: boolean;
 }
 
 export interface LoginRequest {

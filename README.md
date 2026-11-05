@@ -20,7 +20,8 @@ An Awwwards-style, enterprise-grade decoupled legal contract audit platform buil
 - **Native 1536-Dim Vector Normalization**: Requests 1536 native dimensions from `gemini-embedding-001` via Matryoshka Representation Learning (`config={"output_dimensionality": 1536}`), completely eliminating vector zero-padding.
 - **Multi-Seat Workspaces**: Team tier workspace collaboration with role-based member management and workspace-aware Row Level Security (RLS) policies.
 - **Split-Screen Masterwork Dashboard**: Synchronized 50/50 line-numbered document viewer & soft-tinted risk cards grid.
-- **Dual Payment Gateways**: International Stripe Checkout (USD) & India Razorpay Checkout (INR / UPI / Cards).
+- **Hosted Razorpay Payment Lifecycle**: Secure checkout via Razorpay Payment Pages with cryptographically verified, idempotent server webhooks for subscription entitlement management.
+- **In-Memory Parsing & User-Controlled Audit Vault**: Multi-stage document parsing executed in server RAM via stream buffers (zero raw file disk storage) with complete user deletion controls.
 
 ---
 
