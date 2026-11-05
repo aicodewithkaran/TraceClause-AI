@@ -132,3 +132,42 @@ def test_cross_tenant_isolation_rag_chat(client, monkeypatch, user_a, user_b):
     finally:
         app.dependency_overrides.pop(get_current_user, None)
         app.dependency_overrides.pop(get_current_profile, None)
+
+def test_cross_tenant_isolation_job_status(client, monkeypatch, user_a, user_b):
+    """Assert User B cannot query or inspect the status/results of User A's analysis job."""
+    from app.api.v1.endpoints import jobs as jobs_module
+
+    class MockJobTable:
+        def select(self, *args, **kwargs):
+            return self
+        def eq(self, col, val):
+            return self
+        def execute(self):
+            # Return job belonging to User A
+            class MockData:
+                data = [{
+                    "id": "job-user-a-12345",
+                    "user_id": user_a.id,
+                    "file_name": "user_a_contract.pdf",
+                    "status": "completed",
+                    "progress_percent": 100,
+                    "stage_message": "Complete",
+                    "report_id": "rep-user-a-789"
+                }]
+            return MockData()
+
+    class MockSupabase:
+        def table(self, table_name):
+            return MockJobTable()
+
+    monkeypatch.setattr(jobs_module, "_get_supabase_admin", lambda: MockSupabase())
+
+    # User B attempts to read User A's job
+    app.dependency_overrides[get_current_user] = lambda: user_b
+    try:
+        res = client.get("/api/v1/jobs/job-user-a-12345", headers={"Authorization": "Bearer valid-b-token"})
+        assert res.status_code == 404
+        assert "not found" in res.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+

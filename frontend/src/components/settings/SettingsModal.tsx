@@ -85,12 +85,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
           data: { full_name: fullName, profession }
         });
 
-        await supabase.from('profiles').upsert({
-          id: user.id,
-          email: user.email,
+        await supabase.from('profiles').update({
           full_name: fullName,
           profession,
-        });
+        }).eq('id', user.id);
 
         await refreshProfile();
         setProfileMessage('Profile details updated successfully!');

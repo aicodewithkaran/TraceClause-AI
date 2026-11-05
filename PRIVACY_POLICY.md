@@ -21,7 +21,7 @@ We collect information directly from you, automatically through your interaction
 When you register an account, subscribe to a plan, or communicate with us, we collect:
 - **Account Credentials:** Full name, business email address, company name, job title, encrypted password hash, and profile details;
 - **Billing & Subscription Details:** Subscription tier selection (Free Trial, Solo Plan, or Team Plan), billing currency (USD or INR), invoice history, tax identifiers (e.g., GSTIN or VAT numbers), and transaction metadata.  
-  *Note:* All payment card processing is handled directly by our PCI-DSS Level 1 compliant payment processors (**Stripe, Inc.** and **Razorpay Software Private Limited**). TraceClause AI does not collect or store raw payment card numbers, CVVs, or bank account credentials on its servers;
+  *Note:* All payment processing is handled authoritatively and directly by our PCI-DSS Level 1 compliant payment processor (**Razorpay Software Private Limited**). TraceClause AI does not collect or store raw payment card numbers, CVVs, or bank account credentials on its servers;
 - **Support & Communications:** Correspondence, support tickets, and feedback submitted to our team.
 
 ### 1.2 Automatically Collected Data & System Telemetry
@@ -99,12 +99,14 @@ When transferring Personal Data originating from the European Economic Area (EEA
 We retain your account registration data (name, email, subscription status) for as long as your account remains active. If you cancel your subscription or close your account, we retain minimal transaction records for up to seven (7) years to comply with statutory tax, auditing, and financial accounting laws.
 
 ### 5.2 Document & Vector Embedding Retention
-- **Transient In-Memory Processing:** Raw uploaded files (PDF/DOCX) sent to `/api/v1/documents/upload` are parsed strictly in server memory (RAM) via byte streams without being stored on server disk. Legacy binary `.doc` files are not supported.
+- **Transient In-Memory Processing:** Raw uploaded files (PDF/DOCX) sent to `/api/v1/documents/upload` are parsed strictly in server memory (RAM) via byte streams without being stored on server disk. Concurrency is throttled to 3 simultaneous in-memory extractions per worker to prevent resource exhaustion. Legacy binary `.doc` files are not supported.
+- **Temporary Payload Staging:** In asynchronous background queue analysis flows, extracted text is temporarily staged in `staged_job_payloads` exclusively while the analysis worker processes the job. Upon reaching a terminal state (`completed` or `failed`), the staged raw text is permanently and automatically deleted immediately.
 - **User-Controlled Database Storage:** To power the Audit Vault, DOCX redline export, and citation-linked RAG chat, extracted clause text snippets, risk analyses, counter-language recommendations, and 1536-dimensional vector embeddings are stored in your isolated database record for as long as you maintain the audit in your account.
 - **Immediate Deletion Controls:** Users have full control over retained contract content:
   - **Individual Report Deletion:** You can permanently delete any individual report, its clause text, and associated vector embeddings at any time directly from the Audit Vault dashboard or via `DELETE /api/v1/contract/{report_id}`.
   - **Account-Level Purge:** You can permanently delete your entire account and all associated contract reports, embeddings, and quota logs via `DELETE /api/v1/contract/delete-account`.
   - **Ephemeral Analysis Mode:** You can opt to execute audits with `retain_audit: false`, which returns the audit results without persisting clause texts or embeddings to the database.
+- **Database Backup Roll-Off:** When a contract report or user account is deleted, it is deleted immediately from primary operational databases. Any residual records present in encrypted point-in-time database backups expire and roll off within the cloud provider's standard 30-day backup retention cycle without being restored to production.
 
 ---
 

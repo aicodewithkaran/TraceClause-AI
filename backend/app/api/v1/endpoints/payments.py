@@ -3,6 +3,8 @@ from fastapi import APIRouter, HTTPException, Request, Depends, status
 from app.schemas.payment import (
     RazorpayOrderRequest, 
     RazorpayOrderResponse,
+    RazorpayVerifyCheckoutRequest,
+    RazorpayVerifyCheckoutResponse,
     RazorpayWebhookResponse
 )
 from app.services.payment_service import PaymentService
@@ -17,8 +19,9 @@ async def create_razorpay_order(
     current_user: AuthenticatedUser = Depends(get_current_user)
 ):
     """
-    Create a Razorpay order embedding the authenticated user's ID in server-controlled notes.
-    Protected endpoint: Requires valid authenticated session.
+    Creates an authoritative Razorpay order.
+    The client specifies only the plan tier; price and currency are looked up on the server.
+    A pending purchase record is created in Supabase before the order is returned.
     """
     try:
         user_email = current_user.email or "customer@traceclause.ai"
@@ -29,12 +32,38 @@ async def create_razorpay_order(
             detail=f"Razorpay order creation failed: {str(e)}"
         )
 
+@router.post("/razorpay/verify-checkout", response_model=RazorpayVerifyCheckoutResponse)
+async def verify_checkout(
+    req: RazorpayVerifyCheckoutRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user)
+):
+    """
+    Verifies checkout completion from Razorpay modal:
+    Validates cryptographic signature, queries Razorpay API directly,
+    and activates entitlements via atomic fulfill_purchase stored procedure.
+    """
+    try:
+        res = payment_service.verify_checkout_payment(req)
+        if not res.success:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Payment verification failed: {res.message or res.status}"
+            )
+        return res
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Checkout verification failed: {str(e)}"
+        )
+
 @router.post("/razorpay/webhook", response_model=RazorpayWebhookResponse)
 async def razorpay_webhook(request: Request):
     """
-    Webhook receiver for Razorpay payment and subscription lifecycle events.
+    Asynchronous Webhook receiver for Razorpay lifecycle events.
     Verifies HMAC-SHA256 signature, ensures idempotent processing, and activates
-    subscription entitlements strictly from server-controlled metadata references.
+    subscription entitlements via atomic fulfill_purchase stored procedure.
     """
     signature = request.headers.get("X-Razorpay-Signature")
     if not signature:
@@ -62,8 +91,9 @@ async def razorpay_webhook(request: Request):
     try:
         result = payment_service.process_webhook_event(event_data)
         return RazorpayWebhookResponse(
+            success=result.get("success", True),
             status=result.get("status", "processed"),
-            message="Webhook event processed successfully.",
+            message=result.get("message") or "Webhook processed successfully.",
             event_id=result.get("event_id")
         )
     except Exception as e:

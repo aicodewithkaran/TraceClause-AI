@@ -166,13 +166,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) return;
     const now = new Date().toISOString();
     try {
-      const { error } = await supabase.from('profiles').update({
-        tos_accepted_at: now,
-        tos_accepted_version: CURRENT_LEGAL_VERSION,
-      }).eq('id', user.id);
+      const { error } = await supabase.rpc('accept_terms_of_service', {
+        version_string: CURRENT_LEGAL_VERSION,
+      });
 
       if (error) {
-        console.warn('Could not save terms acceptance to DB (run migration if needed):', error.message);
+        console.warn('Could not save terms acceptance via RPC:', error.message);
       }
     } catch (err) {
       console.warn('Error saving terms acceptance:', err);

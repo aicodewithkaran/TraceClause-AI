@@ -34,7 +34,12 @@ async def chat_with_contract(
             )
 
     try:
-        res = rag_service.query_contract(payload.contract_text, payload.question)
+        res = rag_service.query_contract(
+            contract_text=payload.contract_text, 
+            question=payload.question,
+            report_id=payload.contract_id,
+            user_id=current_user.id
+        )
         return ChatQueryResponse(answer=res["answer"], citations=res["citations"])
     except Exception as e:
         raise HTTPException(

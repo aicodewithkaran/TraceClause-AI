@@ -43,9 +43,10 @@ Subscribers to our **Team Plan** are granted multi-seat workspace capabilities. 
 
 ### 2.3 Subscription Tiers & Payment Processing
 TraceClause AI offers paid subscription plans (including **Solo Plan** at $79 USD/month or ₹7,499 INR/month, and **Team Plan** at $299 USD/month or ₹27,999 INR/month) as well as a hard-capped **Free Trial** (limited to 3 total lifetime contract audits).
-- **Billing Gateways:** Payment processing is conducted securely through our authorized PCI-DSS Level 1 compliant third-party payment gateways: **Stripe, Inc.** (for USD / International transactions) and **Razorpay Software Private Limited** (for INR / India domestic transactions).
+- **Sole Billing Gateway:** Payment processing is conducted securely and authoritatively through our authorized PCI-DSS Level 1 compliant third-party payment gateway: **Razorpay Software Private Limited** (handling both international and domestic card, netbanking, and electronic payments).
+- **Authoritative Server Pricing:** All subscription orders, pricing, and currency allocations are calculated and bound on the server prior to checkout. Client-side payment or plan tampering is strictly rejected.
 - **No Direct Storage:** TraceClause AI does not store, collect, or process raw credit card numbers, debit card numbers, CVVs, or banking credentials on its servers.
-- **Recurring Subscriptions:** Paid subscriptions automatically renew on a recurring monthly or annual basis unless cancelled prior to the renewal date via your account settings.
+- **Access Period & Renewals:** Subscriptions are provisioned for fixed 30-day access periods per completed billing transaction. Renewals extend the active entitlement window from the later of the current expiration timestamp or transaction date. Cancellation stops future charges; existing entitlements continue through the end of the paid billing period.
 
 ### 2.4 Account Termination & Suspension
 We reserve the right to suspend, disable, or terminate your account or access to the Services immediately, without prior notice or liability, if:

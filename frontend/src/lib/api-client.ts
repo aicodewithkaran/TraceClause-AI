@@ -127,4 +127,40 @@ export const apiClient = {
       { headers }
     );
   },
+
+  async createRazorpayOrder(planTier: 'solo' | 'team'): Promise<{
+    purchase_id: string;
+    order_id: string;
+    amount: number;
+    currency: string;
+    key_id: string;
+  }> {
+    const headers = await getAuthHeaders();
+    const response = await axios.post(
+      `${API_BASE_URL}/payments/razorpay/create-order`,
+      { plan_tier: planTier },
+      { headers }
+    );
+    return response.data;
+  },
+
+  async verifyRazorpayCheckout(data: {
+    purchase_id: string;
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }): Promise<{
+    success: boolean;
+    status: string;
+    plan_tier?: string;
+    message?: string;
+  }> {
+    const headers = await getAuthHeaders();
+    const response = await axios.post(
+      `${API_BASE_URL}/payments/razorpay/verify-checkout`,
+      data,
+      { headers }
+    );
+    return response.data;
+  },
 };

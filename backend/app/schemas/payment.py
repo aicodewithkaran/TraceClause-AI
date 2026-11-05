@@ -1,17 +1,37 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Dict, Any
 
 class RazorpayOrderRequest(BaseModel):
+    """
+    Client specifies only the desired plan identifier.
+    Pricing, currency, and intervals are strictly looked up on the server.
+    """
     plan_tier: str = Field(..., description="solo or team")
-    amount_usd: Optional[int] = Field(79, description="Amount in USD (e.g. 79 for Solo, 299 for Team)")
 
 class RazorpayOrderResponse(BaseModel):
+    purchase_id: str
     order_id: str
     amount: int
     currency: str
     key_id: str
 
-class RazorpayWebhookResponse(BaseModel):
+class RazorpayVerifyCheckoutRequest(BaseModel):
+    """
+    Payload returned by Razorpay Checkout modal after user completes payment.
+    """
+    purchase_id: str
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+
+class RazorpayVerifyCheckoutResponse(BaseModel):
+    success: bool
     status: str
-    message: str
+    plan_tier: Optional[str] = None
+    message: Optional[str] = None
+
+class RazorpayWebhookResponse(BaseModel):
+    success: bool
+    status: str
+    message: Optional[str] = "Webhook processed successfully."
     event_id: Optional[str] = None
