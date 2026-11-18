@@ -1,6 +1,8 @@
 import os
+import json
 from pydantic_settings import BaseSettings
-from typing import List, Optional
+from pydantic import field_validator
+from typing import List, Optional, Union
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "TraceClause AI"
@@ -16,6 +18,21 @@ class Settings(BaseSettings):
     # Core Secret Key (Must be at least 32 chars in production)
     SECRET_KEY: str = ""
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [i.strip() for i in v.split(",") if i.strip()]
+        elif isinstance(v, list):
+            return v
+        return ["http://localhost:3000", "http://127.0.0.1:3000"]
     
     # Provider Selection: "openai", "gemini", or "anthropic" (Auto-detected if blank)
     LLM_PROVIDER: Optional[str] = ""
