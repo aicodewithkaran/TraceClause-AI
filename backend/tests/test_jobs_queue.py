@@ -109,3 +109,85 @@ def test_worker_fencing_token_mismatch_prevents_completion():
     assert worker._complete_job("job-123", 1, "rep-456") is False
     assert worker._fail_job("job-123", 1, "stale error") is False
 
+def test_worker_orphan_recovery_requeues_and_fails_max_retries():
+    """Assert orphan reclamation janitor re-queues jobs under max_retries and marks failed with quota refund if exceeded."""
+    import asyncio
+    from app.worker_daemon import SupervisedWorkerDaemon
+    daemon = SupervisedWorkerDaemon(concurrency_limit=2)
+
+    updated_rows = []
+    rpc_calls = []
+
+    class MockJobTable:
+        def select(self, *args, **kwargs):
+            return self
+        def eq(self, col, val):
+            return self
+        def lt(self, col, val):
+            return self
+        def execute(self):
+            class Res:
+                data = [
+                    # Orphan 1: retries=1, max=3 -> should be re-queued
+                    {"id": "job-orphan-1", "retry_count": 1, "max_retries": 3, "fencing_token": 2},
+                    # Orphan 2: retries=3, max=3 -> should be failed and refunded
+                    {"id": "job-orphan-2", "retry_count": 3, "max_retries": 3, "fencing_token": 4}
+                ]
+            return Res()
+
+        def update(self, payload):
+            updated_rows.append(payload)
+            return self
+
+    class MockRPC:
+        def __init__(self, name, params):
+            self.name = name
+            self.params = params
+        def execute(self):
+            rpc_calls.append((self.name, self.params))
+            class Res:
+                data = True
+            return Res()
+
+    class MockSupabase:
+        def table(self, name):
+            return MockJobTable()
+        def rpc(self, name, params):
+            return MockRPC(name, params)
+
+    daemon.supabase = MockSupabase()
+    daemon.last_janitor_run = 0.0
+
+    asyncio.run(daemon.reclaim_orphaned_jobs())
+
+    # Verify Orphan 1 was re-queued with retry_count incremented
+    assert len(updated_rows) == 1
+    assert updated_rows[0]["status"] == "queued"
+    assert updated_rows[0]["retry_count"] == 2
+
+    # Verify Orphan 2 was failed via fail_analysis_job RPC with quota refund
+    assert len(rpc_calls) == 1
+    assert rpc_calls[0][0] == "fail_analysis_job"
+    assert rpc_calls[0][1]["p_job_id"] == "job-orphan-2"
+    assert "timed out" in rpc_calls[0][1]["p_error_msg"]
+
+def test_circuit_breaker_ai_processing_kill_switch(client):
+    """Assert submitting a job returns 503 Service Unavailable when AI_PROCESSING_ENABLED is False."""
+    from app.core.config import settings
+    mock_user = AuthenticatedUser(id="user-cb-123", email="user@example.com")
+    app.dependency_overrides[get_current_user] = lambda: mock_user
+
+    original_setting = settings.AI_PROCESSING_ENABLED
+    try:
+        settings.AI_PROCESSING_ENABLED = False
+        res = client.post("/api/v1/jobs/submit", json={
+            "file_name": "contract.pdf",
+            "extracted_text": "Sample valid contract clause."
+        })
+        assert res.status_code == 503
+        assert "temporarily paused" in res.json()["detail"].lower()
+    finally:
+        settings.AI_PROCESSING_ENABLED = original_setting
+        app.dependency_overrides.pop(get_current_user, None)
+
+

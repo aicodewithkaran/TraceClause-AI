@@ -34,6 +34,13 @@ async def submit_analysis_job(
     enforces maximum 2 concurrent active jobs per user, reserves quota, and stages extracted text.
     Returns in < 200ms with a unique job ID.
     """
+    # Circuit Breaker Kill Switch: Assert AI processing is operational
+    if not settings.AI_PROCESSING_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI contract analysis processing is temporarily paused for scheduled maintenance. Please try again shortly."
+        )
+
     if not req.extracted_text.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -67,8 +74,10 @@ async def submit_analysis_job(
                 detail="Failed to enqueue contract analysis job."
             )
 
-        # Trigger worker immediately in background to claim and process the job
-        background_tasks.add_task(worker.claim_and_run_one)
+        # In development/test environments, trigger worker in-process if configured;
+        # In production/staging, dedicated supervised background worker picks up the job.
+        if settings.RUN_WORKER_IN_PROCESS:
+            background_tasks.add_task(worker.claim_and_run_one)
 
         return ContractJobCreateResponse(
             job_id=data["job_id"],

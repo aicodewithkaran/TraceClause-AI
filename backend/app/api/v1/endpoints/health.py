@@ -48,8 +48,9 @@ def readiness_probe(response: Response):
         supabase.table("profiles").select("id").limit(1).execute()
         db_latency_ms = round((time.time() - db_start) * 1000, 2)
 
-        # 2. Queue depth observation
+        # 2. Queue depth observation and oldest queued job latency
         queue_count = 0
+        oldest_queued_age_sec = None
         try:
             q_res = supabase.table("contract_analysis_jobs") \
                 .select("id", count="exact") \
@@ -57,6 +58,19 @@ def readiness_probe(response: Response):
                 .limit(1) \
                 .execute()
             queue_count = q_res.count or 0
+
+            # Measure oldest queued job age for queue lag monitoring
+            oldest_res = supabase.table("contract_analysis_jobs") \
+                .select("created_at") \
+                .eq("status", "queued") \
+                .order("created_at", desc=False) \
+                .limit(1) \
+                .execute()
+            if oldest_res.data and len(oldest_res.data) > 0:
+                from datetime import datetime, timezone
+                created_str = oldest_res.data[0]["created_at"]
+                created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+                oldest_queued_age_sec = max(0, int((datetime.now(timezone.utc) - created_dt).total_seconds()))
         except Exception:
             pass
 
@@ -65,6 +79,9 @@ def readiness_probe(response: Response):
             "database": "connected",
             "db_latency_ms": db_latency_ms,
             "active_queue_depth": queue_count,
+            "oldest_queued_job_age_seconds": oldest_queued_age_sec,
+            "ai_processing_enabled": settings.AI_PROCESSING_ENABLED,
+            "uploads_enabled": settings.UPLOADS_ENABLED,
             "environment": settings.ENVIRONMENT
         }
     except Exception as e:

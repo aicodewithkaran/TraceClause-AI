@@ -222,6 +222,11 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onAnalysisComplete }) => {
           <span>{error}</span>
         </div>
       )}
+
+      {/* Assistive Legal Review Reminder */}
+      <p className="mt-3 text-center text-[11px] text-slate-400 dark:text-slate-500">
+        TraceClause AI is an assistive workflow tool, not legal counsel. Results require independent attorney review.
+      </p>
     </div>
   );
 };

@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+from app.core.rate_limiter import IPRateLimitMiddleware
 from app.api.v1.api import api_router
 
 @asynccontextmanager
@@ -16,6 +17,12 @@ app = FastAPI(
     version=settings.VERSION,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     lifespan=lifespan
+)
+
+# Abuse protection: In-memory sliding-window IP rate limiting
+app.add_middleware(
+    IPRateLimitMiddleware, 
+    max_requests_per_minute=settings.MAX_REQUESTS_PER_MINUTE_PER_IP
 )
 
 # CORS setup for decoupled Next.js frontend

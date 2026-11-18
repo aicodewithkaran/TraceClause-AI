@@ -7,7 +7,7 @@ An enterprise-grade, decoupled legal contract audit platform built with **Next.j
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0-emerald.svg)
 ![Supabase](https://img.shields.io/badge/Supabase-pgvector-emerald.svg)
 ![Python](https://img.shields.io/badge/Python-3.12-blue.svg)
-![Tests](https://img.shields.io/badge/Tests-33%20Passing-brightgreen.svg)
+![Tests](https://img.shields.io/badge/Tests-38%20Passing-brightgreen.svg)
 
 ---
 
@@ -234,12 +234,13 @@ Explore the deep architectural documentation and production guides:
 
 1. 🏛️ **[Technical Systems Architecture Documentation](SYSTEM_ARCHITECTURE_DOCUMENTATION.md)** — Comprehensive 6-module systems engineering blueprint.
 2. 🚀 **[Production Go-Live Hardening Plan & Launch Gates](PRODUCTION_GO_LIVE_HARDENING_PLAN.md)** — Staged concurrency gates, 10 launch acceptance criteria, and scaling plan.
-3. 💳 **[Production Deployment & Razorpay Integration Guide](DEPLOYMENT_AND_RAZORPAY_GUIDE.md)** — Step-by-step production rollout guide.
-4. 📄 **[Low-Level Wiring & System Data Flow](docs/01-low-level-wiring.md)**
-5. 📄 **[Points of Failure & Risk Mitigation](docs/02-point-of-failures.md)**
-6. 📄 **[Frontend Architecture Blueprint](docs/03-frontend-architecture.md)**
-7. 📄 **[Backend Architecture Blueprint](docs/04-backend-architecture.md)**
-8. 📄 **[Database Schema & Vector Storage Deep Dive](docs/11-database-schema-vector-storage-deep-dive.md)**
+3. 📘 **[Incident & Operations Runbook](docs/12-incident-and-operations-runbook.md)** — Stalled worker recovery, circuit breakers, manual payment fulfillment, and telemetry.
+4. 💳 **[Production Deployment & Razorpay Integration Guide](DEPLOYMENT_AND_RAZORPAY_GUIDE.md)** — Step-by-step production rollout guide.
+5. 📄 **[Low-Level Wiring & System Data Flow](docs/01-low-level-wiring.md)**
+6. 📄 **[Points of Failure & Risk Mitigation](docs/02-point-of-failures.md)**
+7. 📄 **[Frontend Architecture Blueprint](docs/03-frontend-architecture.md)**
+8. 📄 **[Backend Architecture Blueprint](docs/04-backend-architecture.md)**
+9. 📄 **[Database Schema & Vector Storage Deep Dive](docs/11-database-schema-vector-storage-deep-dive.md)**
 
 ---
 

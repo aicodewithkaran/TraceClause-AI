@@ -1,6 +1,6 @@
 import os
 import json
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
 from typing import List, Optional, Union
 
@@ -14,6 +14,22 @@ class Settings(BaseSettings):
     
     # Strict Development-Only Demo Mode (Must be False in production)
     ALLOW_DEMO_AUTH: bool = False
+    
+    # Emergency Kill Switches (Operational Circuit Breakers)
+    AI_PROCESSING_ENABLED: bool = True
+    UPLOADS_ENABLED: bool = True
+    
+    # Synchronous Analysis Gating: strictly disabled in production to enforce asynchronous queue
+    ALLOW_SYNCHRONOUS_ANALYSIS: bool = False
+    
+    # Worker Concurrency Setting: 1-2 concurrent jobs for controlled Beta phase
+    WORKER_CONCURRENCY: int = 2
+    
+    # Rate Limiting & Abuse Protection
+    MAX_REQUESTS_PER_MINUTE_PER_IP: int = 60
+    MAX_UPLOADS_PER_MINUTE_PER_USER: int = 5
+    MAX_CONCURRENT_ACTIVE_JOBS_PER_USER: int = 2
+    MONTHLY_AI_BUDGET_HARD_LIMIT_USD: float = 250.0
     
     # Core Secret Key (Must be at least 32 chars in production)
     SECRET_KEY: str = ""
@@ -75,6 +91,9 @@ class Settings(BaseSettings):
     RAZORPAY_SOLO_LINK: Optional[str] = "https://razorpay.com"
     RAZORPAY_TEAM_LINK: Optional[str] = "https://razorpay.com"
 
+    # Worker Process Architecture: false means dedicated worker process runs separately
+    RUN_WORKER_IN_PROCESS: bool = False
+
     # Document Upload Hardening Limits
     MAX_UPLOAD_SIZE_MB: int = 15
     MAX_PAGE_COUNT: int = 100
@@ -83,9 +102,11 @@ class Settings(BaseSettings):
     MAX_COMPRESSION_RATIO: float = 20.0
     PARSER_TIMEOUT_SECONDS: int = 15
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore"
+    )
 
     def validate_security_configuration(self):
         """
@@ -115,5 +136,20 @@ class Settings(BaseSettings):
             # 4. Assert at least one LLM API key is present
             if not (self.OPENAI_API_KEY or self.GEMINI_API_KEY or self.ANTHROPIC_API_KEY):
                 raise RuntimeError("FATAL SECURITY MISCONFIGURATION: At least one AI provider API key (OPENAI_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY) must be set.")
+
+    def validate_worker_configuration(self):
+        """
+        Validate environment variables for the dedicated background worker.
+        Worker requires database access and at least one LLM provider configured.
+        """
+        env = self.ENVIRONMENT.lower()
+        if env not in ("production", "staging", "development", "test"):
+            raise RuntimeError(f"FATAL: Unrecognized ENVIRONMENT '{self.ENVIRONMENT}'.")
+
+        if env in ("production", "staging"):
+            if not self.SUPABASE_URL or not self.supabase_admin_key:
+                raise RuntimeError("FATAL WORKER MISCONFIGURATION: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for background worker operation.")
+            if not (self.OPENAI_API_KEY or self.GEMINI_API_KEY or self.ANTHROPIC_API_KEY):
+                raise RuntimeError("FATAL WORKER MISCONFIGURATION: At least one AI provider API key must be configured for the background worker.")
 
 settings = Settings()

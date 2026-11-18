@@ -177,6 +177,13 @@ export const SplitView: React.FC<SplitViewProps> = ({ analysis, onReset }) => {
           )}
         </div>
       </div>
+
+      {/* Legal & Regulatory Assistance Disclaimer */}
+      <div className={`p-3.5 rounded-2xl border text-center text-[11px] leading-relaxed transition-all ${
+        isDark ? 'bg-slate-900/60 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-500'
+      }`}>
+        <span className="font-semibold text-slate-600 dark:text-slate-300">Important Legal Disclaimer:</span> TraceClause AI provides automated contract assistance for review workflows and does not provide legal advice or create an attorney-client relationship. All AI-generated risk assessments and counter-language recommendations require mandatory review and verification by qualified legal counsel.
+      </div>
     </div>
   );
 };

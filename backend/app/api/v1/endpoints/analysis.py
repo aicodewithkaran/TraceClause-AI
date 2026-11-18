@@ -11,6 +11,7 @@ from app.services.docx_exporter import DocxExporter
 from app.schemas.contract import ContractAnalysisResponse
 from app.core.security import get_current_user, AuthenticatedUser
 from app.core.dependencies import require_feature
+from app.core.config import settings
 
 router = APIRouter()
 analyzer = LLMAnalyzer()
@@ -27,7 +28,20 @@ async def analyze_contract(
     Run semantic chunking & LLM clause-risk analysis returning structured redlines.
     Protected endpoint: Enforces atomic database quota reservation and releases quota on failure.
     Supports user-controlled retention and workspace association.
+    NOTE: Strictly gated in production in favor of the asynchronous background queue (POST /jobs/submit).
     """
+    if not settings.ALLOW_SYNCHRONOUS_ANALYSIS and settings.ENVIRONMENT.lower() in ("production", "staging"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Synchronous analysis is disabled in production. Please submit contract audits via POST /api/v1/jobs/submit for reliable asynchronous queue processing."
+        )
+
+    if not settings.AI_PROCESSING_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI analysis processing is temporarily paused for scheduled maintenance."
+        )
+
     if not extracted_text.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

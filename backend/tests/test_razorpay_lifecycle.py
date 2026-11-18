@@ -117,3 +117,92 @@ def test_verify_checkout_signature_validation(client, monkeypatch):
         assert "Payment verification failed" in res.json()["detail"]
     finally:
         app.dependency_overrides.pop(get_current_user, None)
+
+def test_webhook_duplicate_event_deduplication(client, monkeypatch):
+    """Assert duplicate webhook event IDs are detected and ignored idempotently without multiple fulfillments."""
+    fulfillment_calls = []
+
+    def mock_db_fulfillment(*args, **kwargs):
+        event_id = kwargs.get("event_id")
+        if event_id in fulfillment_calls:
+            return RazorpayVerifyCheckoutResponse(success=True, status="duplicate_ignored")
+        fulfillment_calls.append(event_id)
+        return RazorpayVerifyCheckoutResponse(success=True, status="fulfilled", plan_tier="solo")
+
+    monkeypatch.setattr(PaymentService, "_execute_db_fulfillment", mock_db_fulfillment)
+
+    secret = get_test_webhook_secret()
+    event_payload = {
+        "id": "evt_duplicate_test_999",
+        "event": "payment.captured",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": "pay_dup_123",
+                    "order_id": "order_dup_456",
+                    "amount": 7900,
+                    "currency": "USD"
+                }
+            }
+        }
+    }
+    payload_bytes = json.dumps(event_payload).encode("utf-8")
+    sig = generate_razorpay_signature(payload_bytes, secret)
+
+    # First delivery
+    res1 = client.post("/api/v1/payments/razorpay/webhook", content=payload_bytes, headers={"X-Razorpay-Signature": sig})
+    assert res1.status_code == 200
+    assert res1.json()["status"] == "fulfilled"
+
+    # Second delivery (Duplicate)
+    res2 = client.post("/api/v1/payments/razorpay/webhook", content=payload_bytes, headers={"X-Razorpay-Signature": sig})
+    assert res2.status_code == 200
+    assert res2.json()["status"] == "duplicate_ignored"
+    # Ensure only 1 fulfillment execution occurred
+    assert len(fulfillment_calls) == 1
+
+def test_webhook_cancellation_reverts_subscription_to_free(client, monkeypatch):
+    """Assert subscription.cancelled event reverts user profile subscription_tier to free."""
+    updated_profiles = []
+
+    class MockTable:
+        def __init__(self, name):
+            self.name = name
+        def select(self, *args, **kwargs):
+            return self
+        def eq(self, col, val):
+            return self
+        def execute(self):
+            class Res:
+                data = [{"user_id": "user-cancelled-123"}]
+            return Res()
+        def update(self, payload):
+            updated_profiles.append(payload)
+            return self
+
+    class MockSupabase:
+        def table(self, name):
+            return MockTable(name)
+
+    monkeypatch.setattr(payment_service, "supabase", MockSupabase())
+
+    secret = get_test_webhook_secret()
+    event_payload = {
+        "id": "evt_cancel_123",
+        "event": "subscription.cancelled",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "order_id": "order_cancel_456"
+                }
+            }
+        }
+    }
+    payload_bytes = json.dumps(event_payload).encode("utf-8")
+    sig = generate_razorpay_signature(payload_bytes, secret)
+
+    res = client.post("/api/v1/payments/razorpay/webhook", content=payload_bytes, headers={"X-Razorpay-Signature": sig})
+    assert res.status_code == 200
+    assert len(updated_profiles) == 1
+    assert updated_profiles[0]["subscription_tier"] == "free"
+

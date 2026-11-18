@@ -46,9 +46,6 @@ out/
 .DS_Store
 *.log
 
-# Internal Documentation
-docs/
-
 # Sample Contracts
 sample_contracts/
 /sample_contracts

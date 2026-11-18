@@ -74,4 +74,28 @@ def test_mock_analysis_strictly_blocked_in_production(monkeypatch):
         analyzer._analyze_batch([{"clause_number": 1, "clause_name": "Test Clause", "text": "This is test text"}])
     assert "Mock legal analysis is strictly prohibited in production" in str(exc_info.value)
 
+def test_synchronous_analysis_blocked_in_production(client, monkeypatch):
+    """Assert synchronous POST /api/v1/contract/analyze returns 403 Forbidden in production to enforce queue."""
+    from app.core.config import settings
+    from app.core.security import AuthenticatedUser, get_current_user
+    from app.main import app
+
+    mock_user = AuthenticatedUser(id="user-prod-123", email="user@example.com")
+    app.dependency_overrides[get_current_user] = lambda: mock_user
+
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "ALLOW_SYNCHRONOUS_ANALYSIS", False)
+
+    try:
+        payload = {
+            "file_name": "contract.pdf",
+            "extracted_text": "Sample text for contract analysis"
+        }
+        res = client.post("/api/v1/contract/analyze", json=payload, headers={"Authorization": "Bearer some-token"})
+        assert res.status_code == 403
+        assert "synchronous analysis is disabled" in res.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
 

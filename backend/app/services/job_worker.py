@@ -53,13 +53,24 @@ class JobWorker:
             self._fail_job(job_id, token, "Extracted text was empty")
             return False
 
+        if not settings.AI_PROCESSING_ENABLED:
+            logger.warning(f"AI processing kill switch active. Failing job {job_id} and restoring quota.")
+            self._fail_job(job_id, token, "AI analysis is temporarily paused for scheduled maintenance. Quota has been refunded.")
+            return False
+
         try:
             # Step 1: Chunking (Progress: 20%)
-            self._update_progress(job_id, token, 20, "Extracting and segmenting clauses...")
-            clauses = ChunkingEngine.split_into_clauses(extracted_text)
+            if not self._update_progress(job_id, token, 20, "Extracting and segmenting clauses..."):
+                logger.warning(f"Aborting job {job_id}: lease lost at 20% progress update.")
+                return False
+
+            clauses = await asyncio.to_thread(ChunkingEngine.split_into_clauses, extracted_text)
 
             # Step 2: LLM Risk Analysis (Progress: 50%)
-            self._update_progress(job_id, token, 50, "Evaluating legal risks and generating redlines...")
+            if not self._update_progress(job_id, token, 50, "Evaluating legal risks and generating redlines..."):
+                logger.warning(f"Aborting job {job_id}: lease lost at 50% progress update.")
+                return False
+
             # Run analysis in threadpool to avoid blocking async event loop
             result = await asyncio.to_thread(
                 self.analyzer.analyze_clauses, file_name, extracted_text, clauses
@@ -68,14 +79,19 @@ class JobWorker:
             report_id = None
             if retain_audit:
                 # Step 3: Embeddings Generation (Progress: 80%)
-                self._update_progress(job_id, token, 80, "Indexing semantic vector embeddings...")
+                if not self._update_progress(job_id, token, 80, "Indexing semantic vector embeddings..."):
+                    logger.warning(f"Aborting job {job_id}: lease lost at 80% progress update.")
+                    return False
+
                 clause_texts = [c.original_text for c in result.clauses]
                 embeddings = await asyncio.to_thread(
                     self.vector_store.generate_embeddings_batch, clause_texts
                 )
 
                 # Step 4: Persist Report (Progress: 95%)
-                self._update_progress(job_id, token, 95, "Storing audit report...")
+                if not self._update_progress(job_id, token, 95, "Storing audit report..."):
+                    logger.warning(f"Aborting job {job_id}: lease lost at 95% progress update.")
+                    return False
 
                 # Idempotency safety: clean up any partial report or embeddings from previous attempts
                 existing_report_id = job_data.get("report_id")
@@ -119,16 +135,35 @@ class JobWorker:
             completed = self._complete_job(job_id, token, report_id)
             if not completed:
                 logger.warning(f"Worker {self.worker_id} lost lease on job {job_id}. Fencing token check aborted commit.")
+                # Clean up newly written report and embeddings if lease was lost before commit
+                if report_id:
+                    try:
+                        self.supabase.table("contract_embeddings").delete().eq("report_id", report_id).execute()
+                        self.supabase.table("contract_reports").delete().eq("id", report_id).execute()
+                    except Exception:
+                        pass
                 return False
 
             return True
         except Exception as e:
-            sanitized_err = f"Analysis error: {str(e)[:200]}"
-            self._fail_job(job_id, token, sanitized_err)
+            raw_err = str(e)
+            logger.error(f"Job {job_id} failed with error: {raw_err}")
+            
+            # Map into clean, user-facing error messages without leaking internals
+            if "rate_limit" in raw_err.lower() or "429" in raw_err:
+                user_msg = "AI provider capacity limit reached. Quota has been refunded. Please retry in 1 minute."
+            elif "timeout" in raw_err.lower() or "timed out" in raw_err.lower():
+                user_msg = "AI analysis request timed out. Quota has been refunded. Please retry."
+            elif "circuit breaker" in raw_err.lower() or "paused" in raw_err.lower():
+                user_msg = "AI analysis is currently paused for maintenance. Quota has been refunded."
+            else:
+                user_msg = "We were unable to complete analysis on this document. Quota has been refunded to your account."
+
+            self._fail_job(job_id, token, user_msg)
             return False
 
-    def claim_and_run_one(self) -> Optional[bool]:
-        """Claims a single queued job via PostgreSQL SKIP LOCKED and executes it."""
+    def claim_job(self) -> Optional[Dict[str, Any]]:
+        """Claims a single queued job via PostgreSQL SKIP LOCKED and returns its payload."""
         if not self.supabase:
             return None
 
@@ -136,22 +171,23 @@ class JobWorker:
             res = self.supabase.rpc("claim_next_analysis_job", {
                 "p_worker_id": self.worker_id
             }).execute()
-
-            job_data = res.data
-            if not job_data:
-                return None  # No jobs claimable
-
-            # Run in asyncio loop
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Schedule as task
-                asyncio.create_task(self.execute_job(job_data))
-                return True
-            else:
-                return loop.run_until_complete(self.execute_job(job_data))
+            return res.data
         except Exception as e:
-            logger.error(f"Error in worker claim cycle: {e}")
-            return False
+            logger.error(f"Error in claim_job: {e}")
+            return None
+
+    def claim_and_run_one(self) -> Optional[bool]:
+        """Claims a single queued job and executes it."""
+        job_data = self.claim_job()
+        if not job_data:
+            return None
+
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(self.execute_job(job_data))
+            return True
+        else:
+            return loop.run_until_complete(self.execute_job(job_data))
 
     def _update_progress(self, job_id: str, token: int, progress: int, stage: str) -> bool:
         try:

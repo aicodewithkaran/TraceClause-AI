@@ -5,6 +5,7 @@ from app.services.chunking import ChunkingEngine
 from app.schemas.contract import DocumentExtractResponse
 from app.core.security import get_current_user, AuthenticatedUser
 from app.core.config import settings
+from app.core.rate_limiter import upload_rate_limiter
 
 router = APIRouter()
 # Concurrency throttle: memory-calibrated maximum 6 concurrent in-memory document parse operations per worker process
@@ -21,6 +22,19 @@ async def upload_contract(
     magic byte validation, ZIP bomb checks, page limits, heuristic low-text detection,
     and active concurrency throttling (max 3 concurrent parses).
     """
+    if not settings.UPLOADS_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Document uploads are temporarily paused for scheduled maintenance."
+        )
+
+    # Per-user upload rate limiting
+    if not upload_rate_limiter.is_allowed(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Upload rate limit exceeded: maximum {settings.MAX_UPLOADS_PER_MINUTE_PER_USER} uploads per minute permitted. Please wait a moment before trying again."
+        )
+
     async with upload_semaphore:
         filename = file.filename or ""
         lower_name = filename.lower()
