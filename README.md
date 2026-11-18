@@ -7,7 +7,7 @@ An enterprise-grade, decoupled legal contract audit platform built with **Next.j
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0-emerald.svg)
 ![Supabase](https://img.shields.io/badge/Supabase-pgvector-emerald.svg)
 ![Python](https://img.shields.io/badge/Python-3.12-blue.svg)
-![Tests](https://img.shields.io/badge/Tests-42%20Passing-brightgreen.svg)
+![Tests](https://img.shields.io/badge/Tests-60%20Passing-brightgreen.svg)
 
 ---
 
@@ -19,8 +19,9 @@ An enterprise-grade, decoupled legal contract audit platform built with **Next.j
 - **Asynchronous Durable Queue with Live Stage Tracking**: Heavy agreements ($>30$ pages) run via a PostgreSQL-backed job queue with `FOR UPDATE SKIP LOCKED`, monotonic fencing tokens, and a real-time progress bar in the UI ($20\% \to 50\% \to 80\% \to 100\%$).
 - **Supervised Background Worker Daemon & Continuous Heartbeats**: Independent worker daemon (`app/worker_daemon.py`) with bounded concurrency (2 concurrent jobs for beta), automated orphan reclamation, and continuous 15s background heartbeat pings during long model calls to prevent premature lease reclamation.
 - **Strict Fail-Closed Legal Risk Engine**: Omitted, malformed, or missing model output strictly fails closed (`RuntimeError`) and refunds quota rather than dangerously assuming "Low Risk" or "Acceptable as written".
-- **Active AI Provider Budget Enforcement**: Every Gemini, OpenAI, Claude, and embedding API call records estimated token cost via `budget_tracker.record_usage()`. If the monthly hard budget ceiling ($250 USD) is reached, an operational circuit breaker trips to block further model debt.
-- **Retry-Safe Partial Report Cleanup**: Retried jobs and failures verify and purge previously linked `report_id` rows in `contract_reports` and `contract_embeddings` before generating new output.
+- **Durable AI Provider Budget Ledger**: Built with integer microdollars ($1 USD = 1,000,000 microdollars) and PostgreSQL row-level locks (`FOR UPDATE`). Checks, reserves, settles, and releases spend before every batch and retry across API and worker instances via `ai_budget_service.py` and `reserve_ai_budget` stored procedures.
+- **Fenced & Atomic Report Cleanup**: Terminal failure transition (`fail_analysis_job` RPC) verifies `(job_id, fencing_token, status='processing')` before mutating data. Removes all partial reports and embeddings atomically, refunds quota, and purges staged text inside a single PostgreSQL transaction with zero unfenced Python deletes.
+- **Shared Redis Rate Limiting & Trusted Proxy Defense**: Redis-backed sliding-window rate limiter powered by atomic Lua scripts (`rl:ip`, `rl:upload`, `rl:audit`, `rl:rag`). Safely extracts client IP respecting `settings.TRUSTED_PROXIES` (`X-Real-IP` and rightmost `X-Forwarded-For`), returns `HTTP 429` with `Retry-After`, and fails closed with `HTTP 503` on Redis outages for expensive routes.
 - **Interactive Grounded RAG Assistant**: Context-aware Q&A agent backed by pgvector cosine similarity search, providing instant answers and verifiable contract clause citations.
 - **Native Word (.docx) Redline Export Engine**: Generates standard Microsoft Word `.docx` redline documents with strikethrough original language, underlined counter-proposals, and risk callout boxes.
 - **Enterprise Security & Zero Disk Retention**: Documents are streamed and parsed entirely in server RAM (PyMuPDF & python-docx) with zero disk retention. Staged text payloads are automatically purged upon audit completion or failure.
@@ -29,8 +30,8 @@ An enterprise-grade, decoupled legal contract audit platform built with **Next.j
   - **Solo Plan ($79/mo)**: 20 monthly audits, `.docx` redline exports, and interactive RAG Assistant access.
   - **Team Plan ($299/mo)**: 100 pooled monthly audits, team workspace collaboration, multi-seat access, and direct priority beta email support.
 - **Razorpay Payment Engine**: Server-authoritative order creation, in-app standard checkout modal, HMAC-SHA256 signature verification, and atomic database entitlement fulfillment via PostgreSQL stored procedures.
-- **Process-Local Rate Limiting Guard**: In-memory sliding-window limiter (60 req/min/IP) with sanitized proxy IP resolution (`X-Real-IP` priority) serving as an immediate single-node guard for Beta.
 - **Strictly Pinned Dependencies**: Python dependencies in `requirements.txt` are pinned to exact versions (`==`) for repeatable, deterministic production deployments.
+- **Staging Release Gate & Verification Runbook**: Documented operational verification runbook ([`docs/13-staging-release-gate-and-verification.md`](docs/13-staging-release-gate-and-verification.md)) covering a 10-step end-to-end test sequence, worker crash recovery, AI budget gate trip tests, and sign-off logging.
 
 ---
 
@@ -83,7 +84,9 @@ flowchart LR
 1. In your **Supabase Dashboard**, open the **SQL Editor**.
 2. Run the master schema hardening script:
    [`supabase/migrations/20261105_production_master_hardening.sql`](supabase/migrations/20261105_production_master_hardening.sql)
-3. This creates all necessary tables (`profiles`, `workspaces`, `workspace_members`, `contract_reports`, `contract_embeddings`, `quota_reservations`, `processed_webhooks`, `purchases`, `contract_analysis_jobs`, `staged_job_payloads`), RLS policies, trigger defenses, and stored procedures.
+3. Run the durable AI budget and fenced cleanup migration:
+   [`supabase/migrations/20261118_durable_ai_budget_and_fenced_cleanup.sql`](supabase/migrations/20261118_durable_ai_budget_and_fenced_cleanup.sql)
+4. This creates all necessary tables (`profiles`, `workspaces`, `workspace_members`, `contract_reports`, `contract_embeddings`, `quota_reservations`, `processed_webhooks`, `purchases`, `contract_analysis_jobs`, `staged_job_payloads`, `ai_budget_periods`, `ai_usage_reservations`), RLS policies, trigger defenses, and atomic stored procedures.
 
 ---
 

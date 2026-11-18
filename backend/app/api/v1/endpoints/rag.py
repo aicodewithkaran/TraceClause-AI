@@ -4,6 +4,7 @@ from app.services.vector_store import RAGService
 from app.services.user_isolation import UserIsolationService
 from app.core.dependencies import require_feature
 from app.core.security import get_current_user, AuthenticatedUser
+from app.core.rate_limiter import rag_rate_limiter
 
 router = APIRouter()
 rag_service = RAGService()
@@ -23,6 +24,9 @@ async def chat_with_contract(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Contract text and question must not be empty."
         )
+
+    # Per-user RAG rate limiting (Redis-backed atomic sliding window; fail closed on outage)
+    rag_rate_limiter.check_or_raise(current_user.id)
 
     # Cross-tenant check if contract_id is provided
     if payload.contract_id:

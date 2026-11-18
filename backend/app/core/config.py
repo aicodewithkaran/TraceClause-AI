@@ -26,10 +26,31 @@ class Settings(BaseSettings):
     WORKER_CONCURRENCY: int = 2
     
     # Rate Limiting & Abuse Protection
+    REDIS_URL: Optional[str] = None
+    TRUSTED_PROXIES: List[str] = ["127.0.0.1", "::1"]
     MAX_REQUESTS_PER_MINUTE_PER_IP: int = 60
     MAX_UPLOADS_PER_MINUTE_PER_USER: int = 5
+    MAX_AUDIT_SUBMISSIONS_PER_MINUTE_PER_USER: int = 10
+    MAX_RAG_QUERIES_PER_MINUTE_PER_USER: int = 20
     MAX_CONCURRENT_ACTIVE_JOBS_PER_USER: int = 2
+    FAIL_CLOSED_ON_REDIS_ERROR: bool = True
+    ENABLE_RATE_LIMITER_IN_TEST: bool = False
     MONTHLY_AI_BUDGET_HARD_LIMIT_USD: float = 250.0
+
+    @field_validator("TRUSTED_PROXIES", mode="before")
+    @classmethod
+    def assemble_trusted_proxies(cls, v: Union[str, List[str]]) -> List[str]:
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [i.strip() for i in v.split(",") if i.strip()]
+        elif isinstance(v, list):
+            return v
+        return ["127.0.0.1", "::1"]
     
     # Core Secret Key (Must be at least 32 chars in production)
     SECRET_KEY: str = ""

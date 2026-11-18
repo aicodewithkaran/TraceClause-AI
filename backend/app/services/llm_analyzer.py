@@ -202,19 +202,72 @@ Batch Clauses to Review:
                 pass
         return []
 
-    def _review_batch_gemini(self, batch: List[Dict[str, str]]) -> List[ClauseAnalysis]:
+    def _execute_provider_call(self, provider: str, model: str, prompt: str, call_func):
+        """
+        Executes a provider call wrapped in the durable, concurrency-safe database budget ledger:
+        1. Reserve maximum plausible cost via PostgreSQL FOR UPDATE.
+        2. Execute the model call with tenacity retries.
+        3. If successful, settle with actual token cost.
+        4. If timeout/network uncertainty, settle as 'uncertain'.
+        5. If definite client error, release reservation.
+        """
+        import uuid
+        from app.services.ai_budget_service import ai_budget_service, AIBudgetService
         from app.core.rate_limiter import budget_tracker
-        prompt = self._get_batch_prompt(batch)
+
+        req_id = f"ai_req_{uuid.uuid4().hex}"
+        estimated_microdollars = AIBudgetService.estimate_cost_microdollars(model, prompt)
+
+        # 1. Atomically check and reserve in PostgreSQL ledger
+        reserved = ai_budget_service.reserve(
+            reservation_id=req_id,
+            estimated_microdollars=estimated_microdollars,
+            provider=provider,
+            model=model
+        )
+        if not reserved:
+            raise RuntimeError(
+                f"Monthly AI budget limit (${ai_budget_service.cap_microdollars / 1_000_000:.2f} USD) exceeded. "
+                "AI analysis is halted by database budget ledger."
+            )
+
         try:
-            res = _call_gemini_with_retry(self.gemini_client, settings.GEMINI_MODEL, prompt)
-            # Record estimated Gemini 1.5 Pro usage
-            try:
+            res = call_func()
+            
+            # 2. Extract actual tokens and settle
+            tokens_in, tokens_out = 0, 0
+            if provider == "gemini":
                 tokens_in = getattr(res.usage_metadata, 'prompt_token_count', len(prompt) // 4)
                 tokens_out = getattr(res.usage_metadata, 'candidates_token_count', 800)
-                cost = (tokens_in * 0.00000125) + (tokens_out * 0.000005)
-                budget_tracker.record_usage(cost)
-            except Exception:
-                budget_tracker.record_usage(0.005)
+            elif provider == "openai":
+                tokens_in = res.usage.prompt_tokens if hasattr(res, 'usage') and res.usage else len(prompt) // 4
+                tokens_out = res.usage.completion_tokens if hasattr(res, 'usage') and res.usage else 800
+            elif provider == "anthropic":
+                tokens_in = res.usage.input_tokens if hasattr(res, 'usage') and res.usage else len(prompt) // 4
+                tokens_out = res.usage.output_tokens if hasattr(res, 'usage') and res.usage else 800
+
+            actual_microdollars = AIBudgetService.calculate_actual_cost_microdollars(model, tokens_in, tokens_out)
+            ai_budget_service.settle(req_id, actual_microdollars, status="settled")
+            budget_tracker.record_usage(actual_microdollars / 1_000_000)
+            return res
+        except Exception as e:
+            err_str = str(e).lower()
+            if "timeout" in err_str or "timed out" in err_str:
+                # Uncertain billing: settle at estimated cost so budget is not under-counted
+                ai_budget_service.settle(req_id, estimated_microdollars, status="uncertain", metadata={"error": str(e)[:200]})
+            else:
+                ai_budget_service.release(req_id, reason=str(e)[:200])
+            raise
+
+    def _review_batch_gemini(self, batch: List[Dict[str, str]]) -> List[ClauseAnalysis]:
+        prompt = self._get_batch_prompt(batch)
+        try:
+            res = self._execute_provider_call(
+                "gemini", 
+                settings.GEMINI_MODEL, 
+                prompt, 
+                lambda: _call_gemini_with_retry(self.gemini_client, settings.GEMINI_MODEL, prompt)
+            )
 
             data_list = self._extract_json_array(res.text)
             if data_list and len(data_list) > 0:
@@ -226,22 +279,18 @@ Batch Clauses to Review:
         except Exception as e:
             if self.is_mock_allowed():
                 return [self._mock_analysis(c) for c in batch]
-            logger.error(f"Gemini batch analysis failed after retries: {type(e).__name__}")
+            logger.error(f"Gemini batch analysis failed: {type(e).__name__} - {e}")
             raise RuntimeError(f"AI contract analysis failed ({type(e).__name__}). Quota has been preserved.")
 
     def _review_batch_openai(self, batch: List[Dict[str, str]]) -> List[ClauseAnalysis]:
-        from app.core.rate_limiter import budget_tracker
         prompt = self._get_batch_prompt(batch)
         try:
-            res = _call_openai_with_retry(self.openai_client, settings.OPENAI_MODEL, prompt)
-            # Record estimated GPT-4o usage
-            try:
-                tokens_in = res.usage.prompt_tokens if res.usage else len(prompt) // 4
-                tokens_out = res.usage.completion_tokens if res.usage else 800
-                cost = (tokens_in * 0.0000025) + (tokens_out * 0.00001)
-                budget_tracker.record_usage(cost)
-            except Exception:
-                budget_tracker.record_usage(0.005)
+            res = self._execute_provider_call(
+                "openai",
+                settings.OPENAI_MODEL,
+                prompt,
+                lambda: _call_openai_with_retry(self.openai_client, settings.OPENAI_MODEL, prompt)
+            )
 
             data_list = self._extract_json_array(res.choices[0].message.content)
             if data_list and len(data_list) > 0:
@@ -253,22 +302,18 @@ Batch Clauses to Review:
         except Exception as e:
             if self.is_mock_allowed():
                 return [self._mock_analysis(c) for c in batch]
-            logger.error(f"OpenAI batch analysis failed after retries: {type(e).__name__}")
+            logger.error(f"OpenAI batch analysis failed: {type(e).__name__} - {e}")
             raise RuntimeError(f"AI contract analysis failed ({type(e).__name__}). Quota has been preserved.")
 
     def _review_batch_anthropic(self, batch: List[Dict[str, str]]) -> List[ClauseAnalysis]:
-        from app.core.rate_limiter import budget_tracker
         prompt = self._get_batch_prompt(batch)
         try:
-            res = _call_anthropic_with_retry(self.anthropic_client, settings.ANTHROPIC_MODEL, prompt)
-            # Record estimated Claude 3.5 Sonnet usage
-            try:
-                tokens_in = res.usage.input_tokens if hasattr(res, 'usage') and res.usage else len(prompt) // 4
-                tokens_out = res.usage.output_tokens if hasattr(res, 'usage') and res.usage else 800
-                cost = (tokens_in * 0.000003) + (tokens_out * 0.000015)
-                budget_tracker.record_usage(cost)
-            except Exception:
-                budget_tracker.record_usage(0.005)
+            res = self._execute_provider_call(
+                "anthropic",
+                settings.ANTHROPIC_MODEL,
+                prompt,
+                lambda: _call_anthropic_with_retry(self.anthropic_client, settings.ANTHROPIC_MODEL, prompt)
+            )
 
             data_list = self._extract_json_array(res.content[0].text)
             if data_list and len(data_list) > 0:
@@ -280,7 +325,7 @@ Batch Clauses to Review:
         except Exception as e:
             if self.is_mock_allowed():
                 return [self._mock_analysis(c) for c in batch]
-            logger.error(f"Anthropic batch analysis failed after retries: {type(e).__name__}")
+            logger.error(f"Anthropic batch analysis failed: {type(e).__name__} - {e}")
             raise RuntimeError(f"AI contract analysis failed ({type(e).__name__}). Quota has been preserved.")
 
     def _parse_batch_json(self, batch: List[Dict[str, str]], data_list: list) -> List[ClauseAnalysis]:

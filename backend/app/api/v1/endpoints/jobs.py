@@ -10,6 +10,7 @@ from app.schemas.job import (
 from app.core.security import get_current_user, AuthenticatedUser
 from app.services.job_worker import JobWorker
 from app.core.config import settings
+from app.core.rate_limiter import audit_rate_limiter
 from supabase import create_client
 
 router = APIRouter()
@@ -40,6 +41,9 @@ async def submit_analysis_job(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI contract analysis processing is temporarily paused for scheduled maintenance. Please try again shortly."
         )
+
+    # Per-user audit submission rate limiting (Redis-backed atomic sliding window; fail closed on outage)
+    audit_rate_limiter.check_or_raise(current_user.id)
 
     if not req.extracted_text.strip():
         raise HTTPException(

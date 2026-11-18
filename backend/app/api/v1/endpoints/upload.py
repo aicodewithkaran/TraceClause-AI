@@ -28,12 +28,8 @@ async def upload_contract(
             detail="Document uploads are temporarily paused for scheduled maintenance."
         )
 
-    # Per-user upload rate limiting
-    if not upload_rate_limiter.is_allowed(current_user.id):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Upload rate limit exceeded: maximum {settings.MAX_UPLOADS_PER_MINUTE_PER_USER} uploads per minute permitted. Please wait a moment before trying again."
-        )
+    # Per-user upload rate limiting (Redis-backed atomic sliding window; fail closed on outage)
+    upload_rate_limiter.check_or_raise(current_user.id)
 
     async with upload_semaphore:
         filename = file.filename or ""

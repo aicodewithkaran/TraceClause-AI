@@ -258,4 +258,216 @@ def test_retry_cleanup_purges_prior_partial_report():
     assert "contract_reports" in deleted_tables
 
 
+class MockDatabaseWithFencing:
+    """
+    Simulates database behavior of fail_analysis_job and complete_analysis_job stored procedures
+    from supabase/migrations/20261118_durable_ai_budget_and_fenced_cleanup.sql.
+    """
+    def __init__(self):
+        self.job = {
+            "id": "job-fenced-1",
+            "fencing_token": 3,
+            "status": "processing",
+            "report_id": "rep-active-1",
+            "audit_reservation_id": "audit-res-1"
+        }
+        self.reports = {
+            "rep-active-1": {"id": "rep-active-1", "analysis_job_id": "job-fenced-1", "fencing_token": 3}
+        }
+        self.embeddings = [
+            {"report_id": "rep-active-1", "clause_number": 1}
+        ]
+        self.quota_reservations = {
+            "audit-res-1": {"id": "res-1", "status": "reserved", "tier": "solo"}
+        }
+        self.refund_count = 0
+
+    def fail_analysis_job(self, p_job_id: str, p_token: int, p_error_msg: str) -> bool:
+        # 1. Require matching job_id, fencing_token, and status = 'processing'
+        if self.job["id"] != p_job_id or self.job["fencing_token"] != p_token or self.job["status"] != "processing":
+            return False  # Stale worker or already finalized
+
+        # 2. Delete linked report & embeddings
+        rep_id = self.job.get("report_id")
+        if rep_id and rep_id in self.reports:
+            del self.reports[rep_id]
+            self.embeddings = [e for e in self.embeddings if e["report_id"] != rep_id]
+
+        # 3. Mark job failed
+        self.job["status"] = "failed"
+        self.job["report_id"] = None
+        self.job["error_message"] = p_error_msg
+
+        # 4. Release quota exactly once
+        q_res = self.quota_reservations.get(self.job["audit_reservation_id"])
+        if q_res and q_res["status"] == "reserved":
+            q_res["status"] = "released"
+            self.refund_count += 1
+
+        return True
+
+    def complete_analysis_job(self, p_job_id: str, p_token: int, p_report_id: str) -> bool:
+        if self.job["id"] != p_job_id or self.job["fencing_token"] != p_token or self.job["status"] != "processing":
+            return False
+
+        self.job["status"] = "completed"
+        self.job["report_id"] = p_report_id
+        q_res = self.quota_reservations.get(self.job["audit_reservation_id"])
+        if q_res:
+            q_res["status"] = "committed"
+        return True
+
+
+def test_stale_worker_failure_rejected_by_fencing():
+    """Assert a stale worker with an older fencing token cannot fail or mutate a newer job lease."""
+    from app.services.job_worker import JobWorker
+
+    db = MockDatabaseWithFencing()
+    worker = JobWorker(worker_id="worker_stale")
+
+    class MockRPC:
+        def __init__(self, name, params):
+            self.name = name
+            self.params = params
+        def execute(self):
+            class Res:
+                data = db.fail_analysis_job(
+                    self.params["p_job_id"],
+                    self.params["p_token"],
+                    self.params["p_error_msg"]
+                )
+            return Res()
+
+    class MockSupabase:
+        def rpc(self, name, params):
+            return MockRPC(name, params)
+
+    worker.supabase = MockSupabase()
+
+    # Stale worker attempts failure with old token=2 (active token is 3)
+    success = worker._fail_job("job-fenced-1", token=2, error_msg="Stale failure")
+    assert success is False
+
+    # Assert current attempt's data was NOT mutated
+    assert db.job["status"] == "processing"
+    assert "rep-active-1" in db.reports
+    assert len(db.embeddings) == 1
+    assert db.quota_reservations["audit-res-1"]["status"] == "reserved"
+    assert db.refund_count == 0
+
+
+def test_current_worker_failure_atomic_cleanup():
+    """Assert current worker with matching token removes report, embeddings, and refunds quota atomically."""
+    from app.services.job_worker import JobWorker
+
+    db = MockDatabaseWithFencing()
+    worker = JobWorker(worker_id="worker_current")
+
+    class MockRPC:
+        def __init__(self, name, params):
+            self.name = name
+            self.params = params
+        def execute(self):
+            class Res:
+                data = db.fail_analysis_job(
+                    self.params["p_job_id"],
+                    self.params["p_token"],
+                    self.params["p_error_msg"]
+                )
+            return Res()
+
+    class MockSupabase:
+        def rpc(self, name, params):
+            return MockRPC(name, params)
+
+    worker.supabase = MockSupabase()
+
+    # Current worker fails with matching token=3
+    success = worker._fail_job("job-fenced-1", token=3, error_msg="AI timeout")
+    assert success is True
+
+    # Assert partial report and embeddings deleted, job marked failed, quota refunded
+    assert db.job["status"] == "failed"
+    assert db.job["report_id"] is None
+    assert "rep-active-1" not in db.reports
+    assert len(db.embeddings) == 0
+    assert db.quota_reservations["audit-res-1"]["status"] == "released"
+    assert db.refund_count == 1
+
+
+def test_duplicate_failure_call_no_double_refund():
+    """Assert duplicate fail_analysis_job calls return False and do not double refund quota."""
+    from app.services.job_worker import JobWorker
+
+    db = MockDatabaseWithFencing()
+    worker = JobWorker(worker_id="worker_dup")
+
+    class MockRPC:
+        def __init__(self, name, params):
+            self.name = name
+            self.params = params
+        def execute(self):
+            class Res:
+                data = db.fail_analysis_job(
+                    self.params["p_job_id"],
+                    self.params["p_token"],
+                    self.params["p_error_msg"]
+                )
+            return Res()
+
+    class MockSupabase:
+        def rpc(self, name, params):
+            return MockRPC(name, params)
+
+    worker.supabase = MockSupabase()
+
+    # First failure succeeds
+    assert worker._fail_job("job-fenced-1", token=3, error_msg="Error 1") is True
+    assert db.refund_count == 1
+
+    # Second duplicated failure call fails closed (returns False, no second refund)
+    assert worker._fail_job("job-fenced-1", token=3, error_msg="Error 2") is False
+    assert db.refund_count == 1
+
+
+def test_completed_job_cannot_be_failed_by_stale_worker():
+    """Assert a successfully completed report cannot be deleted or failed by a later stale worker call."""
+    from app.services.job_worker import JobWorker
+
+    db = MockDatabaseWithFencing()
+    db.complete_analysis_job("job-fenced-1", p_token=3, p_report_id="rep-active-1")
+    assert db.job["status"] == "completed"
+
+    worker = JobWorker(worker_id="worker_late")
+
+    class MockRPC:
+        def __init__(self, name, params):
+            self.name = name
+            self.params = params
+        def execute(self):
+            class Res:
+                data = db.fail_analysis_job(
+                    self.params["p_job_id"],
+                    self.params["p_token"],
+                    self.params["p_error_msg"]
+                )
+            return Res()
+
+    class MockSupabase:
+        def rpc(self, name, params):
+            return MockRPC(name, params)
+
+    worker.supabase = MockSupabase()
+
+    # Stale attempt to fail the completed job
+    assert worker._fail_job("job-fenced-1", token=3, error_msg="Late crash") is False
+
+    # Completed report and job state remain completely protected
+    assert db.job["status"] == "completed"
+    assert "rep-active-1" in db.reports
+    assert len(db.embeddings) == 1
+    assert db.quota_reservations["audit-res-1"]["status"] == "committed"
+
+
+
 

@@ -110,30 +110,15 @@ class JobWorker:
                     logger.warning(f"Aborting job {job_id}: lease lost at 95% progress update.")
                     return False
 
-                # Retry Idempotency: Clean up any prior partial report and embeddings
-                existing_report_id = job_data.get("report_id")
-                if not existing_report_id:
-                    try:
-                        j_chk = self.supabase.table("contract_analysis_jobs").select("report_id").eq("id", job_id).execute()
-                        if j_chk.data and j_chk.data[0].get("report_id"):
-                            existing_report_id = j_chk.data[0]["report_id"]
-                    except Exception as e:
-                        logger.warning(f"Error querying existing report_id for job {job_id}: {e}")
-
-                if existing_report_id:
-                    try:
-                        self.supabase.table("contract_embeddings").delete().eq("report_id", existing_report_id).execute()
-                        self.supabase.table("contract_reports").delete().eq("id", existing_report_id).execute()
-                        logger.info(f"Purged prior partial report {existing_report_id} before retry execution.")
-                    except Exception as e:
-                        logger.warning(f"Error purging prior partial report {existing_report_id}: {e}")
-
+                # Report payload with strict ownership linking (job_id, fencing_token)
                 report_payload = {
                     "user_id": user_id,
                     "file_name": file_name,
                     "overall_risk_score": result.summary.overall_risk_score,
                     "summary_json": result.summary.model_dump(),
-                    "clauses_json": [c.model_dump() for c in result.clauses]
+                    "clauses_json": [c.model_dump() for c in result.clauses],
+                    "analysis_job_id": job_id,
+                    "fencing_token": token
                 }
                 if workspace_id:
                     report_payload["workspace_id"] = workspace_id
@@ -142,7 +127,7 @@ class JobWorker:
                 if rep_res.data and len(rep_res.data) > 0:
                     report_id = rep_res.data[0]["id"]
 
-                    # Immediately record report_id on the job row so subsequent retries or failures find it
+                    # Record report_id on the job row under strict fencing token match
                     try:
                         self.supabase.table("contract_analysis_jobs") \
                             .update({"report_id": report_id}) \
@@ -170,14 +155,8 @@ class JobWorker:
             # Step 5: Mark Completed via Fenced Stored Procedure
             completed = self._complete_job(job_id, token, report_id)
             if not completed:
-                logger.warning(f"Worker {self.worker_id} lost lease on job {job_id}. Fencing token check aborted commit.")
-                # Clean up newly written report and embeddings if lease was lost before commit
-                if report_id:
-                    try:
-                        self.supabase.table("contract_embeddings").delete().eq("report_id", report_id).execute()
-                        self.supabase.table("contract_reports").delete().eq("id", report_id).execute()
-                    except Exception:
-                        pass
+                logger.warning(f"Worker {self.worker_id} lost lease on job {job_id} (token {token}). Fencing token check aborted commit.")
+                # Do NOT perform Python-side deletes: another worker attempt owns the job now
                 return False
 
             return True
@@ -284,24 +263,22 @@ class JobWorker:
             return False
 
     def _fail_job(self, job_id: str, token: int, error_msg: str) -> bool:
+        """
+        Fenced terminal failure transition.
+        Delegates 100% of report/embedding cleanup and quota release to the atomic fail_analysis_job RPC.
+        ZERO Python-side unfenced deletions to eliminate races against newer worker attempts.
+        """
         try:
-            # Clean up any partial report or embeddings linked to this failed job
-            if self.supabase:
-                try:
-                    chk = self.supabase.table("contract_analysis_jobs").select("report_id").eq("id", job_id).execute()
-                    if chk.data and chk.data[0].get("report_id"):
-                        rep_id = chk.data[0]["report_id"]
-                        self.supabase.table("contract_embeddings").delete().eq("report_id", rep_id).execute()
-                        self.supabase.table("contract_reports").delete().eq("id", rep_id).execute()
-                except Exception:
-                    pass
-
             res = self.supabase.rpc("fail_analysis_job", {
                 "p_job_id": job_id,
                 "p_token": token,
                 "p_error_msg": error_msg
             }).execute()
-            return bool(res.data)
-        except Exception:
+            success = bool(res.data)
+            if not success:
+                logger.warning(f"Worker {self.worker_id} lease lost on job {job_id} (token {token}). fail_analysis_job aborted.")
+            return success
+        except Exception as e:
+            logger.error(f"Error executing fail_analysis_job RPC for job {job_id}: {e}")
             return False
 
