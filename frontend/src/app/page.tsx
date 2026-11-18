@@ -42,7 +42,7 @@ export default function Home() {
     }
   }, [user]);
 
-  // 1. Session Persistence: Load active analysis on page refresh
+  // 1. Session Persistence: Load active analysis on page refresh safely
   useEffect(() => {
     try {
       const cached = sessionStorage.getItem('active_analysis');
@@ -50,7 +50,9 @@ export default function Home() {
         setAnalysisResult(JSON.parse(cached));
       }
     } catch {
-      // Ignore cache parse error
+      try {
+        sessionStorage.removeItem('active_analysis');
+      } catch { }
     }
   }, []);
 
@@ -79,12 +81,22 @@ export default function Home() {
     if (result) {
       try {
         sessionStorage.setItem('active_analysis', JSON.stringify(result));
-      } catch { }
+      } catch {
+        // Graceful mitigation for browser 5MB quota exhaustion on large documents
+        try {
+          sessionStorage.removeItem('active_analysis');
+          sessionStorage.setItem('active_report_meta', JSON.stringify({
+            file_name: result.file_name,
+            summary: result.summary,
+          }));
+        } catch { }
+      }
       refreshProfile();
       fetchHistory();
     } else {
       try {
         sessionStorage.removeItem('active_analysis');
+        sessionStorage.removeItem('active_report_meta');
       } catch { }
     }
   };

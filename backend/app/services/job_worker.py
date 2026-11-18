@@ -76,6 +76,16 @@ class JobWorker:
 
                 # Step 4: Persist Report (Progress: 95%)
                 self._update_progress(job_id, token, 95, "Storing audit report...")
+
+                # Idempotency safety: clean up any partial report or embeddings from previous attempts
+                existing_report_id = job_data.get("report_id")
+                if existing_report_id:
+                    try:
+                        self.supabase.table("contract_embeddings").delete().eq("report_id", existing_report_id).execute()
+                        self.supabase.table("contract_reports").delete().eq("id", existing_report_id).execute()
+                    except Exception:
+                        pass
+
                 report_payload = {
                     "user_id": user_id,
                     "file_name": file_name,

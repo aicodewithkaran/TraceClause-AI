@@ -1,4 +1,5 @@
 import uuid
+import asyncio
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Body, status
 from fastapi.responses import StreamingResponse
@@ -55,9 +56,9 @@ async def analyze_contract(
     quota_info = QuotaService.reserve_quota(user_id, audit_id)
 
     try:
-        # 2. Chunk contract and run LLM risk analysis
-        clauses = ChunkingEngine.split_into_clauses(extracted_text)
-        result = analyzer.analyze_clauses(file_name, extracted_text, clauses)
+        # 2. Chunk contract and run LLM risk analysis in threadpool to keep event loop free
+        clauses = await asyncio.to_thread(ChunkingEngine.split_into_clauses, extracted_text)
+        result = await asyncio.to_thread(analyzer.analyze_clauses, file_name, extracted_text, clauses)
         result.quota_info = quota_info
 
         # 3. User-controlled retention: persist only if retain_audit is True
@@ -113,7 +114,7 @@ async def export_contract_docx(
         )
 
     try:
-        docx_stream = DocxExporter.generate_redline_docx(report_data)
+        docx_stream = await asyncio.to_thread(DocxExporter.generate_redline_docx, report_data)
         file_name = report_data.get("file_name", "contract_redline").replace(" ", "_")
         filename_header = f"attachment; filename={file_name}_redline.docx"
 

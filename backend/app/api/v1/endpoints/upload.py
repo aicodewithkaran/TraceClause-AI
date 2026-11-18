@@ -7,8 +7,8 @@ from app.core.security import get_current_user, AuthenticatedUser
 from app.core.config import settings
 
 router = APIRouter()
-# Concurrency throttle: maximum 3 concurrent in-memory document parse operations per worker process
-upload_semaphore = asyncio.Semaphore(3)
+# Concurrency throttle: memory-calibrated maximum 6 concurrent in-memory document parse operations per worker process
+upload_semaphore = asyncio.Semaphore(6)
 
 @router.post("/upload", response_model=DocumentExtractResponse)
 async def upload_contract(
@@ -59,8 +59,9 @@ async def upload_contract(
         file_bytes = b"".join(content_chunks)
 
         try:
-            extracted_text = DocumentParser.parse_document(file_bytes, filename)
-            clauses = ChunkingEngine.split_into_clauses(extracted_text)
+            # Offload CPU-bound parsing and chunking to worker thread pool
+            extracted_text = await asyncio.to_thread(DocumentParser.parse_document, file_bytes, filename)
+            clauses = await asyncio.to_thread(ChunkingEngine.split_into_clauses, extracted_text)
 
             preview = extracted_text[:300] + "..." if len(extracted_text) > 300 else extracted_text
 

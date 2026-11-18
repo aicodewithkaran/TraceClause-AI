@@ -18,3 +18,5 @@ tiktoken>=0.5.2
 python-dotenv>=1.0.0
 stripe>=8.0.0
 razorpay>=1.4.1
+tenacity>=8.2.0
+

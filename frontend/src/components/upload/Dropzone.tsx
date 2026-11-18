@@ -15,6 +15,7 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onAnalysisComplete }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [progress, setProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -28,23 +29,98 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onAnalysisComplete }) => {
 
     setError(null);
     setLoading(true);
+    setProgress(10);
     try {
-      setStatusMessage('Parsing contract structure & section boundaries...');
+      setStatusMessage('Parsing contract structure in memory...');
       const extractRes = await apiClient.uploadDocument(file);
+      setProgress(25);
 
-      setStatusMessage('AI is evaluating legal liabilities & generating redlines...');
-      const analysisRes = await apiClient.analyzeContract(
-        extractRes.filename,
-        extractRes.extracted_text
-      );
+      try {
+        // Preferred production path: submit to durable asynchronous queue
+        setStatusMessage('Submitting to contract analysis queue...');
+        const jobRes = await apiClient.submitAnalysisJob(
+          extractRes.filename,
+          extractRes.extracted_text
+        );
 
-      onAnalysisComplete(analysisRes);
+        setProgress(35);
+        setStatusMessage('Job queued: waiting for processing worker...');
+
+        let completed = false;
+        const startTime = Date.now();
+        const maxWaitMs = 180000; // 3 minute timeout safety
+
+        while (!completed && Date.now() - startTime < maxWaitMs) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          const jobStatus = await apiClient.getJobStatus(jobRes.job_id);
+
+          if (jobStatus.status === 'processing') {
+            const currentPct = jobStatus.progress_percent || 40;
+            setProgress(Math.max(35, currentPct));
+            if (jobStatus.stage_message) {
+              setStatusMessage(jobStatus.stage_message);
+            }
+          } else if (jobStatus.status === 'completed') {
+            setProgress(100);
+            setStatusMessage('Audit complete! Opening analysis...');
+            completed = true;
+
+            const resData = jobStatus.result || {};
+            const summary = typeof resData.summary_json === 'string'
+              ? JSON.parse(resData.summary_json)
+              : resData.summary_json || {
+                  total_clauses: 0,
+                  high_risks: 0,
+                  medium_risks: 0,
+                  low_risks: 0,
+                  overall_risk_score: 'LOW RISK'
+                };
+            const clauses = typeof resData.clauses_json === 'string'
+              ? JSON.parse(resData.clauses_json)
+              : resData.clauses_json || [];
+
+            onAnalysisComplete({
+              file_name: extractRes.filename,
+              extracted_text: extractRes.extracted_text,
+              summary,
+              clauses,
+            });
+            return;
+          } else if (jobStatus.status === 'failed' || jobStatus.status === 'cancelled') {
+            throw new Error(jobStatus.error_message || 'Contract analysis job failed. Please try again.');
+          }
+        }
+
+        if (!completed) {
+          throw new Error('Analysis timed out. Please check the Audit Vault or try a shorter document.');
+        }
+      } catch (queueErr: unknown) {
+        // Fallback to synchronous analysis if queue endpoint is unavailable
+        const qErr = queueErr as { response?: { status?: number }; message?: string };
+        if (qErr?.response?.status === 404 || qErr?.response?.status === 501) {
+          setStatusMessage('Processing via direct analysis pipeline...');
+          setProgress(50);
+          const syncRes = await apiClient.analyzeContract(
+            extractRes.filename,
+            extractRes.extracted_text
+          );
+          setProgress(100);
+          onAnalysisComplete(syncRes);
+        } else {
+          throw queueErr;
+        }
+      }
     } catch (err: unknown) {
-      const apiErr = err as { response?: { data?: { detail?: string } } };
-      setError(apiErr?.response?.data?.detail || 'Failed to process contract. Please check backend status.');
+      const apiErr = err as { response?: { data?: { detail?: string } }; message?: string };
+      setError(
+        apiErr?.response?.data?.detail ||
+        apiErr?.message ||
+        'Failed to process contract. Please verify backend status.'
+      );
     } finally {
       setLoading(false);
       setStatusMessage(null);
+      setProgress(0);
     }
   };
 
@@ -80,17 +156,33 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onAnalysisComplete }) => {
         />
 
         {loading ? (
-          <div className="flex flex-col items-center py-8 space-y-4">
+          <div className="flex flex-col items-center py-8 space-y-4 w-full">
             <div className="relative">
               <div className="w-16 h-16 rounded-full border-4 border-indigo-500/20 border-t-indigo-500 animate-spin" />
               <Sparkles className="w-6 h-6 text-indigo-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
             </div>
-            <p className={`text-base font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-              {statusMessage}
-            </p>
-            <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              Processing clauses against standard legal playbooks...
-            </p>
+            <div className="space-y-1 text-center w-full max-w-md">
+              <p className={`text-base font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                {statusMessage}
+              </p>
+              <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                Evaluating commercial risk & generating redlines...
+              </p>
+              {progress > 0 && (
+                <div className="w-full pt-3">
+                  <div className="flex justify-between text-[11px] font-semibold text-slate-400 mb-1.5">
+                    <span>Audit Pipeline Progress</span>
+                    <span>{progress}%</span>
+                  </div>
+                  <div className={`w-full h-2 rounded-full overflow-hidden border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-200 border-slate-300'}`}>
+                    <div
+                      className="bg-indigo-600 h-2 rounded-full transition-all duration-300 ease-out shadow-sm shadow-indigo-500/50"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="flex flex-col items-center space-y-4 py-6">

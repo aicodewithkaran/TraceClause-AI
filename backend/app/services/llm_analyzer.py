@@ -1,10 +1,62 @@
 import json
+import logging
 from typing import List, Dict
 from openai import OpenAI
 from anthropic import Anthropic
 from google import genai
+from tenacity import retry, stop_after_attempt, wait_random_exponential
 from app.core.config import settings
 from app.schemas.contract import ClauseAnalysis, AnalysisSummary, ContractAnalysisResponse
+
+logger = logging.getLogger(__name__)
+
+def _is_transient_error(e: BaseException) -> bool:
+    """Detect rate limits, network timeouts, and temporary upstream 5xx errors."""
+    err_name = type(e).__name__.lower()
+    err_str = str(e).lower()
+    transient_indicators = (
+        "rate", "429", "timeout", "busy", "overload", "connection",
+        "temporarily", "503", "500", "502", "504", "resourceexhausted"
+    )
+    return any(ind in err_name or ind in err_str for ind in transient_indicators)
+
+@retry(
+    wait=wait_random_exponential(min=1, max=10),
+    stop=stop_after_attempt(4),
+    retry=_is_transient_error,
+    reraise=True
+)
+def _call_gemini_with_retry(client, model: str, prompt: str):
+    return client.models.generate_content(model=model, contents=prompt)
+
+@retry(
+    wait=wait_random_exponential(min=1, max=10),
+    stop=stop_after_attempt(4),
+    retry=_is_transient_error,
+    reraise=True
+)
+def _call_openai_with_retry(client, model: str, prompt: str):
+    return client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "You are a legal contract review assistant. Respond ONLY with a valid JSON array."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.1
+    )
+
+@retry(
+    wait=wait_random_exponential(min=1, max=10),
+    stop=stop_after_attempt(4),
+    retry=_is_transient_error,
+    reraise=True
+)
+def _call_anthropic_with_retry(client, model: str, prompt: str):
+    return client.messages.create(
+        model=model,
+        max_tokens=4000,
+        messages=[{"role": "user", "content": prompt}]
+    )
 
 class LLMAnalyzer:
     """Multi-Provider LLM Clause Risk Analysis Engine supporting OpenAI, Gemini & Claude."""
@@ -62,6 +114,11 @@ class LLMAnalyzer:
             clauses=analyzed_clauses
         )
 
+    @classmethod
+    def is_mock_allowed(cls) -> bool:
+        """Mock analysis is strictly restricted to development/test environments with demo auth enabled."""
+        return settings.ALLOW_DEMO_AUTH and settings.ENVIRONMENT.lower() in ("development", "test")
+
     def _analyze_batch(self, batch: List[Dict[str, str]]) -> List[ClauseAnalysis]:
         """Analyze a batch of up to 50 clauses in a single LLM API call."""
         if self.provider == "openai" and self.openai_client:
@@ -71,6 +128,11 @@ class LLMAnalyzer:
         elif self.provider == "anthropic" and self.anthropic_client:
             return self._review_batch_anthropic(batch)
         else:
+            if not self.is_mock_allowed():
+                raise RuntimeError(
+                    f"No active AI provider configured (provider={self.provider}). "
+                    "Mock legal analysis is strictly prohibited in production."
+                )
             return [self._mock_analysis(clause) for clause in batch]
 
     def _get_batch_prompt(self, batch: List[Dict[str, str]]) -> str:
@@ -134,55 +196,55 @@ Batch Clauses to Review:
         return []
 
     def _review_batch_gemini(self, batch: List[Dict[str, str]]) -> List[ClauseAnalysis]:
+        prompt = self._get_batch_prompt(batch)
         try:
-            prompt = self._get_batch_prompt(batch)
-            res = self.gemini_client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=prompt
-            )
+            res = _call_gemini_with_retry(self.gemini_client, settings.GEMINI_MODEL, prompt)
             data_list = self._extract_json_array(res.text)
             if data_list and len(data_list) > 0:
                 return self._parse_batch_json(batch, data_list)
-            return [self._mock_analysis(c) for c in batch]
+            
+            if self.is_mock_allowed():
+                return [self._mock_analysis(c) for c in batch]
+            raise RuntimeError("Gemini returned response without a parseable clause JSON array.")
         except Exception as e:
-            # Sanitize logging: log only exception type, never contract text or prompts
-            # logger.warning(f"Gemini batch review failed: {type(e).__name__}")
-            return [self._mock_analysis(c) for c in batch]
+            if self.is_mock_allowed():
+                return [self._mock_analysis(c) for c in batch]
+            logger.error(f"Gemini batch analysis failed after retries: {type(e).__name__}")
+            raise RuntimeError(f"AI contract analysis failed ({type(e).__name__}). Quota has been preserved.")
 
     def _review_batch_openai(self, batch: List[Dict[str, str]]) -> List[ClauseAnalysis]:
+        prompt = self._get_batch_prompt(batch)
         try:
-            prompt = self._get_batch_prompt(batch)
-            res = self.openai_client.chat.completions.create(
-                model=settings.OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": "You are a legal contract review assistant. Respond ONLY with a valid JSON array."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1
-            )
+            res = _call_openai_with_retry(self.openai_client, settings.OPENAI_MODEL, prompt)
             data_list = self._extract_json_array(res.choices[0].message.content)
             if data_list and len(data_list) > 0:
                 return self._parse_batch_json(batch, data_list)
-            return [self._mock_analysis(c) for c in batch]
+            
+            if self.is_mock_allowed():
+                return [self._mock_analysis(c) for c in batch]
+            raise RuntimeError("OpenAI returned response without a parseable clause JSON array.")
         except Exception as e:
-            # Sanitize logging: log only exception type, never contract text or prompts
-            return [self._mock_analysis(c) for c in batch]
+            if self.is_mock_allowed():
+                return [self._mock_analysis(c) for c in batch]
+            logger.error(f"OpenAI batch analysis failed after retries: {type(e).__name__}")
+            raise RuntimeError(f"AI contract analysis failed ({type(e).__name__}). Quota has been preserved.")
 
     def _review_batch_anthropic(self, batch: List[Dict[str, str]]) -> List[ClauseAnalysis]:
+        prompt = self._get_batch_prompt(batch)
         try:
-            prompt = self._get_batch_prompt(batch)
-            res = self.anthropic_client.messages.create(
-                model=settings.ANTHROPIC_MODEL,
-                max_tokens=4000,
-                messages=[{"role": "user", "content": prompt}]
-            )
+            res = _call_anthropic_with_retry(self.anthropic_client, settings.ANTHROPIC_MODEL, prompt)
             data_list = self._extract_json_array(res.content[0].text)
             if data_list and len(data_list) > 0:
                 return self._parse_batch_json(batch, data_list)
-            return [self._mock_analysis(c) for c in batch]
+            
+            if self.is_mock_allowed():
+                return [self._mock_analysis(c) for c in batch]
+            raise RuntimeError("Anthropic returned response without a parseable clause JSON array.")
         except Exception as e:
-            # Sanitize logging: log only exception type, never contract text or prompts
-            return [self._mock_analysis(c) for c in batch]
+            if self.is_mock_allowed():
+                return [self._mock_analysis(c) for c in batch]
+            logger.error(f"Anthropic batch analysis failed after retries: {type(e).__name__}")
+            raise RuntimeError(f"AI contract analysis failed ({type(e).__name__}). Quota has been preserved.")
 
     def _parse_batch_json(self, batch: List[Dict[str, str]], data_list: list) -> List[ClauseAnalysis]:
         results: List[ClauseAnalysis] = []

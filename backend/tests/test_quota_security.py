@@ -59,3 +59,19 @@ def test_analysis_releases_quota_reservation_on_failure(client, monkeypatch, use
     finally:
         app.dependency_overrides.pop(get_current_user, None)
 
+def test_mock_analysis_strictly_blocked_in_production(monkeypatch):
+    """Assert LLMAnalyzer raises RuntimeError rather than returning mock analysis in production."""
+    from app.services.llm_analyzer import LLMAnalyzer
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "ALLOW_DEMO_AUTH", False)
+
+    analyzer = LLMAnalyzer()
+    analyzer.provider = "mock"
+
+    with pytest.raises(RuntimeError) as exc_info:
+        analyzer._analyze_batch([{"clause_number": 1, "clause_name": "Test Clause", "text": "This is test text"}])
+    assert "Mock legal analysis is strictly prohibited in production" in str(exc_info.value)
+
+

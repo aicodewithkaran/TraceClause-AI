@@ -71,6 +71,55 @@ export const apiClient = {
     return response.data;
   },
 
+  async submitAnalysisJob(
+    fileName: string,
+    extractedText: string,
+    retainAudit: boolean = true,
+    workspaceId?: string
+  ): Promise<{
+    job_id: string;
+    audit_reservation_id: string;
+    tier: string;
+    status: string;
+    usage_after_reservation: number;
+    tier_limit: number;
+  }> {
+    const headers = await getAuthHeaders();
+    const payload: any = {
+      file_name: fileName,
+      extracted_text: extractedText,
+      retain_audit: retainAudit,
+    };
+    if (workspaceId) {
+      payload.workspace_id = workspaceId;
+    }
+
+    const response = await axios.post(
+      `${API_BASE_URL}/jobs/submit`,
+      payload,
+      { headers }
+    );
+    return response.data;
+  },
+
+  async getJobStatus(jobId: string): Promise<{
+    id: string;
+    file_name: string;
+    status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
+    progress_percent: number;
+    stage_message: string;
+    report_id?: string;
+    error_message?: string;
+    result?: any;
+  }> {
+    const headers = await getAuthHeaders();
+    const response = await axios.get(
+      `${API_BASE_URL}/jobs/${jobId}`,
+      { headers }
+    );
+    return response.data;
+  },
+
   async chatWithContract(contractText: string, question: string, contractId?: string): Promise<ChatQueryResponse> {
     const headers = await getAuthHeaders();
 
