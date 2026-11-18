@@ -57,6 +57,10 @@ class VectorStoreService:
         Supports both Gemini (gemini-embedding-001) and OpenAI (text-embedding-3-small).
         """
         all_embeddings: List[List[float]] = []
+        from app.core.rate_limiter import budget_tracker
+        # Estimate embedding tokens & record against budget
+        estimated_tokens = sum(len(t) for t in texts) // 4
+        budget_tracker.record_usage(estimated_tokens * 0.00000002)
 
         for i in range(0, len(texts), self.BATCH_SIZE):
             batch_texts = texts[i:i + self.BATCH_SIZE]

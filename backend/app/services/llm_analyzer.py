@@ -121,6 +121,13 @@ class LLMAnalyzer:
 
     def _analyze_batch(self, batch: List[Dict[str, str]]) -> List[ClauseAnalysis]:
         """Analyze a batch of up to 50 clauses in a single LLM API call."""
+        from app.core.rate_limiter import budget_tracker
+        if budget_tracker.is_budget_exceeded():
+            raise RuntimeError(
+                f"Monthly AI budget hard limit (${budget_tracker.monthly_budget_usd:.2f} USD) has been reached. "
+                "AI analysis is temporarily paused by circuit breaker to prevent cost overruns."
+            )
+
         if self.provider == "openai" and self.openai_client:
             return self._review_batch_openai(batch)
         elif self.provider == "gemini" and self.gemini_client:
@@ -196,9 +203,19 @@ Batch Clauses to Review:
         return []
 
     def _review_batch_gemini(self, batch: List[Dict[str, str]]) -> List[ClauseAnalysis]:
+        from app.core.rate_limiter import budget_tracker
         prompt = self._get_batch_prompt(batch)
         try:
             res = _call_gemini_with_retry(self.gemini_client, settings.GEMINI_MODEL, prompt)
+            # Record estimated Gemini 1.5 Pro usage
+            try:
+                tokens_in = getattr(res.usage_metadata, 'prompt_token_count', len(prompt) // 4)
+                tokens_out = getattr(res.usage_metadata, 'candidates_token_count', 800)
+                cost = (tokens_in * 0.00000125) + (tokens_out * 0.000005)
+                budget_tracker.record_usage(cost)
+            except Exception:
+                budget_tracker.record_usage(0.005)
+
             data_list = self._extract_json_array(res.text)
             if data_list and len(data_list) > 0:
                 return self._parse_batch_json(batch, data_list)
@@ -213,9 +230,19 @@ Batch Clauses to Review:
             raise RuntimeError(f"AI contract analysis failed ({type(e).__name__}). Quota has been preserved.")
 
     def _review_batch_openai(self, batch: List[Dict[str, str]]) -> List[ClauseAnalysis]:
+        from app.core.rate_limiter import budget_tracker
         prompt = self._get_batch_prompt(batch)
         try:
             res = _call_openai_with_retry(self.openai_client, settings.OPENAI_MODEL, prompt)
+            # Record estimated GPT-4o usage
+            try:
+                tokens_in = res.usage.prompt_tokens if res.usage else len(prompt) // 4
+                tokens_out = res.usage.completion_tokens if res.usage else 800
+                cost = (tokens_in * 0.0000025) + (tokens_out * 0.00001)
+                budget_tracker.record_usage(cost)
+            except Exception:
+                budget_tracker.record_usage(0.005)
+
             data_list = self._extract_json_array(res.choices[0].message.content)
             if data_list and len(data_list) > 0:
                 return self._parse_batch_json(batch, data_list)
@@ -230,9 +257,19 @@ Batch Clauses to Review:
             raise RuntimeError(f"AI contract analysis failed ({type(e).__name__}). Quota has been preserved.")
 
     def _review_batch_anthropic(self, batch: List[Dict[str, str]]) -> List[ClauseAnalysis]:
+        from app.core.rate_limiter import budget_tracker
         prompt = self._get_batch_prompt(batch)
         try:
             res = _call_anthropic_with_retry(self.anthropic_client, settings.ANTHROPIC_MODEL, prompt)
+            # Record estimated Claude 3.5 Sonnet usage
+            try:
+                tokens_in = res.usage.input_tokens if hasattr(res, 'usage') and res.usage else len(prompt) // 4
+                tokens_out = res.usage.output_tokens if hasattr(res, 'usage') and res.usage else 800
+                cost = (tokens_in * 0.000003) + (tokens_out * 0.000015)
+                budget_tracker.record_usage(cost)
+            except Exception:
+                budget_tracker.record_usage(0.005)
+
             data_list = self._extract_json_array(res.content[0].text)
             if data_list and len(data_list) > 0:
                 return self._parse_batch_json(batch, data_list)
@@ -247,6 +284,11 @@ Batch Clauses to Review:
             raise RuntimeError(f"AI contract analysis failed ({type(e).__name__}). Quota has been preserved.")
 
     def _parse_batch_json(self, batch: List[Dict[str, str]], data_list: list) -> List[ClauseAnalysis]:
+        """
+        Parses LLM JSON array into structured ClauseAnalysis objects.
+        Strict verification: Any missing, incomplete, or unverified clause results in an
+        immediate failure rather than falling back to false-negative 'Low' / 'Acceptable' defaults.
+        """
         results: List[ClauseAnalysis] = []
         data_map = {item.get("clause_number"): item for item in data_list if isinstance(item, dict)}
 
@@ -254,22 +296,33 @@ Batch Clauses to Review:
             num = c["clause_number"]
             data = data_map.get(num)
             
-            # Fallback by index position if clause_number match failed
+            # Fallback by index position only if clause_number matching was omitted by the model
             if not data and idx < len(data_list) and isinstance(data_list[idx], dict):
                 data = data_list[idx]
             
-            if not data:
-                data = {}
+            # Fail closed: Do NOT mask missing AI evaluations with reassuring defaults
+            if not data or not data.get("risk_level"):
+                raise RuntimeError(
+                    f"AI analysis returned incomplete results: Clause {num} ('{c.get('clause_name', '')}') "
+                    "was omitted from the model output. Batch failed to prevent unreviewed clauses appearing safe."
+                )
+
+            raw_risk = str(data.get("risk_level", "")).strip().upper()
+            if raw_risk not in ("HIGH", "MEDIUM", "LOW"):
+                raise RuntimeError(
+                    f"AI analysis returned unrecognized risk level '{raw_risk}' for Clause {num}. "
+                    "Batch failed to ensure rigorous legal risk standards."
+                )
 
             results.append(
                 ClauseAnalysis(
                     clause_number=num,
-                    clause_name=data.get("clause_name", c["clause_name"]),
+                    clause_name=data.get("clause_name") or c["clause_name"],
                     original_text=c["text"],
-                    risk_level=data.get("risk_level", "Low"),
-                    risk_explanation=data.get("risk_explanation", f"Analysis for section: {c['clause_name']}"),
-                    suggested_counter_language=data.get("suggested_counter_language", "Acceptable as written."),
-                    category=data.get("category", "General")
+                    risk_level=raw_risk.capitalize(),
+                    risk_explanation=data.get("risk_explanation") or f"Analysis for section: {c['clause_name']}",
+                    suggested_counter_language=data.get("suggested_counter_language") or "Acceptable as written.",
+                    category=data.get("category") or "General"
                 )
             )
         return results

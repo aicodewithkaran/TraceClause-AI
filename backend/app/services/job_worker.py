@@ -58,6 +58,23 @@ class JobWorker:
             self._fail_job(job_id, token, "AI analysis is temporarily paused for scheduled maintenance. Quota has been refunded.")
             return False
 
+        # Active background heartbeat refresher: updates heartbeat_at every 15s during long analysis/embedding tasks
+        stop_heartbeat = asyncio.Event()
+
+        async def _heartbeat_loop():
+            while not stop_heartbeat.is_set():
+                try:
+                    await asyncio.sleep(15)
+                    if stop_heartbeat.is_set():
+                        break
+                    await asyncio.to_thread(self._touch_heartbeat, job_id, token)
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.debug(f"Heartbeat tick error for job {job_id}: {e}")
+
+        heartbeat_task = asyncio.create_task(_heartbeat_loop())
+
         try:
             # Step 1: Chunking (Progress: 20%)
             if not self._update_progress(job_id, token, 20, "Extracting and segmenting clauses..."):
@@ -93,14 +110,23 @@ class JobWorker:
                     logger.warning(f"Aborting job {job_id}: lease lost at 95% progress update.")
                     return False
 
-                # Idempotency safety: clean up any partial report or embeddings from previous attempts
+                # Retry Idempotency: Clean up any prior partial report and embeddings
                 existing_report_id = job_data.get("report_id")
+                if not existing_report_id:
+                    try:
+                        j_chk = self.supabase.table("contract_analysis_jobs").select("report_id").eq("id", job_id).execute()
+                        if j_chk.data and j_chk.data[0].get("report_id"):
+                            existing_report_id = j_chk.data[0]["report_id"]
+                    except Exception as e:
+                        logger.warning(f"Error querying existing report_id for job {job_id}: {e}")
+
                 if existing_report_id:
                     try:
                         self.supabase.table("contract_embeddings").delete().eq("report_id", existing_report_id).execute()
                         self.supabase.table("contract_reports").delete().eq("id", existing_report_id).execute()
-                    except Exception:
-                        pass
+                        logger.info(f"Purged prior partial report {existing_report_id} before retry execution.")
+                    except Exception as e:
+                        logger.warning(f"Error purging prior partial report {existing_report_id}: {e}")
 
                 report_payload = {
                     "user_id": user_id,
@@ -115,6 +141,16 @@ class JobWorker:
                 rep_res = self.supabase.table("contract_reports").insert(report_payload).execute()
                 if rep_res.data and len(rep_res.data) > 0:
                     report_id = rep_res.data[0]["id"]
+
+                    # Immediately record report_id on the job row so subsequent retries or failures find it
+                    try:
+                        self.supabase.table("contract_analysis_jobs") \
+                            .update({"report_id": report_id}) \
+                            .eq("id", job_id) \
+                            .eq("fencing_token", token) \
+                            .execute()
+                    except Exception as e:
+                        logger.warning(f"Failed to record report_id on job {job_id}: {e}")
 
                     # Persist Vector Embeddings
                     emb_rows = []
@@ -150,7 +186,11 @@ class JobWorker:
             logger.error(f"Job {job_id} failed with error: {raw_err}")
             
             # Map into clean, user-facing error messages without leaking internals
-            if "rate_limit" in raw_err.lower() or "429" in raw_err:
+            if "budget" in raw_err.lower():
+                user_msg = "Monthly AI budget limit reached. Quota has been refunded to your account."
+            elif "incomplete" in raw_err.lower() or "malformed" in raw_err.lower() or "lacked valid" in raw_err.lower():
+                user_msg = "Contract analysis encountered malformed model output. Quota has been refunded. Please retry."
+            elif "rate_limit" in raw_err.lower() or "429" in raw_err:
                 user_msg = "AI provider capacity limit reached. Quota has been refunded. Please retry in 1 minute."
             elif "timeout" in raw_err.lower() or "timed out" in raw_err.lower():
                 user_msg = "AI analysis request timed out. Quota has been refunded. Please retry."
@@ -161,6 +201,14 @@ class JobWorker:
 
             self._fail_job(job_id, token, user_msg)
             return False
+        finally:
+            # Terminate active background heartbeat loop cleanly
+            stop_heartbeat.set()
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except (asyncio.CancelledError, Exception):
+                pass
 
     def claim_job(self) -> Optional[Dict[str, Any]]:
         """Claims a single queued job via PostgreSQL SKIP LOCKED and returns its payload."""
@@ -171,7 +219,16 @@ class JobWorker:
             res = self.supabase.rpc("claim_next_analysis_job", {
                 "p_worker_id": self.worker_id
             }).execute()
-            return res.data
+            data = res.data
+            if data and "report_id" not in data:
+                # Query linked report_id to support retry cleanup even on older DB schemas
+                try:
+                    chk = self.supabase.table("contract_analysis_jobs").select("report_id").eq("id", data["job_id"]).execute()
+                    if chk.data and chk.data[0].get("report_id"):
+                        data["report_id"] = chk.data[0]["report_id"]
+                except Exception:
+                    pass
+            return data
         except Exception as e:
             logger.error(f"Error in claim_job: {e}")
             return None
@@ -188,6 +245,20 @@ class JobWorker:
             return True
         else:
             return loop.run_until_complete(self.execute_job(job_data))
+
+    def _touch_heartbeat(self, job_id: str, token: int) -> bool:
+        """Touches heartbeat timestamp in database to prevent active long jobs from getting reclaimed."""
+        if not self.supabase:
+            return False
+        try:
+            res = self.supabase.table("contract_analysis_jobs") \
+                .update({"heartbeat_at": "NOW()"}) \
+                .eq("id", job_id) \
+                .eq("fencing_token", token) \
+                .execute()
+            return bool(res.data)
+        except Exception:
+            return False
 
     def _update_progress(self, job_id: str, token: int, progress: int, stage: str) -> bool:
         try:
@@ -214,6 +285,17 @@ class JobWorker:
 
     def _fail_job(self, job_id: str, token: int, error_msg: str) -> bool:
         try:
+            # Clean up any partial report or embeddings linked to this failed job
+            if self.supabase:
+                try:
+                    chk = self.supabase.table("contract_analysis_jobs").select("report_id").eq("id", job_id).execute()
+                    if chk.data and chk.data[0].get("report_id"):
+                        rep_id = chk.data[0]["report_id"]
+                        self.supabase.table("contract_embeddings").delete().eq("report_id", rep_id).execute()
+                        self.supabase.table("contract_reports").delete().eq("id", rep_id).execute()
+                except Exception:
+                    pass
+
             res = self.supabase.rpc("fail_analysis_job", {
                 "p_job_id": job_id,
                 "p_token": token,

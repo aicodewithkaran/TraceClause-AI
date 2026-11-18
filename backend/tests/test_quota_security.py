@@ -97,5 +97,73 @@ def test_synchronous_analysis_blocked_in_production(client, monkeypatch):
     finally:
         app.dependency_overrides.pop(get_current_user, None)
 
+def test_ai_budget_limit_circuit_breaker_trips(monkeypatch):
+    """Assert LLMAnalyzer trips circuit breaker and stops execution when monthly budget limit is exceeded."""
+    from app.services.llm_analyzer import LLMAnalyzer
+    from app.core.rate_limiter import budget_tracker
+
+    # Reset budget tracker state for test
+    original_spend = budget_tracker.estimated_spend_usd
+    original_limit = budget_tracker.monthly_budget_usd
+
+    try:
+        budget_tracker.monthly_budget_usd = 5.0
+        budget_tracker.estimated_spend_usd = 0.0
+
+        # Record usage below limit
+        budget_tracker.record_usage(2.5)
+        assert budget_tracker.is_budget_exceeded() is False
+        assert budget_tracker.estimated_spend_usd == 2.5
+
+        # Exceed budget limit
+        budget_tracker.record_usage(3.0)  # Total 5.5 > 5.0
+        assert budget_tracker.is_budget_exceeded() is True
+
+        analyzer = LLMAnalyzer()
+        with pytest.raises(RuntimeError) as exc_info:
+            analyzer._analyze_batch([{"clause_number": 1, "clause_name": "Test", "text": "Sample text"}])
+        assert "Monthly AI budget hard limit" in str(exc_info.value)
+    finally:
+        budget_tracker.estimated_spend_usd = original_spend
+        budget_tracker.monthly_budget_usd = original_limit
+
+def test_malformed_model_output_fails_closed_instead_of_defaulting_to_low():
+    """Assert _parse_batch_json strictly raises on missing or omitted clauses rather than masking with 'Low' risk."""
+    from app.services.llm_analyzer import LLMAnalyzer
+    analyzer = LLMAnalyzer()
+
+    batch = [
+        {"clause_number": 1, "clause_name": "Indemnity", "text": "Customer shall indemnify Vendor."},
+        {"clause_number": 2, "clause_name": "Termination", "text": "May terminate on 30 days notice."}
+    ]
+
+    # Scenario 1: Model returned only clause 1, dropping clause 2
+    partial_model_output = [
+        {"clause_number": 1, "clause_name": "Indemnity", "risk_level": "High", "risk_explanation": "Uncapped liability"}
+    ]
+    with pytest.raises(RuntimeError) as exc_info1:
+        analyzer._parse_batch_json(batch, partial_model_output)
+    assert "was omitted from the model output" in str(exc_info1.value)
+
+    # Scenario 2: Model returned unrecognized or invalid risk_level
+    invalid_risk_output = [
+        {"clause_number": 1, "clause_name": "Indemnity", "risk_level": "UNKNOWN", "risk_explanation": "..."},
+        {"clause_number": 2, "clause_name": "Termination", "risk_level": "Low", "risk_explanation": "..."}
+    ]
+    with pytest.raises(RuntimeError) as exc_info2:
+        analyzer._parse_batch_json(batch, invalid_risk_output)
+    assert "unrecognized risk level 'UNKNOWN'" in str(exc_info2.value)
+
+    # Scenario 3: Valid complete output succeeds with capitalized risk levels
+    valid_output = [
+        {"clause_number": 1, "clause_name": "Indemnity", "risk_level": "high", "risk_explanation": "Broad indemnity"},
+        {"clause_number": 2, "clause_name": "Termination", "risk_level": "low", "risk_explanation": "Standard 30 days"}
+    ]
+    results = analyzer._parse_batch_json(batch, valid_output)
+    assert len(results) == 2
+    assert results[0].risk_level == "High"
+    assert results[1].risk_level == "Low"
+
+
 
 

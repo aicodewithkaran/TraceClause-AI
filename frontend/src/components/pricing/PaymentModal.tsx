@@ -143,7 +143,7 @@ export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) =
 
         {/* Pricing Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-          
+
           {/* ================= SOLO PLAN CARD ================= */}
           <div className="p-6 rounded-3xl bg-slate-950/80 border border-slate-800 hover:border-indigo-500/40 transition-all duration-300 relative flex flex-col justify-between group shadow-xl">
             <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 blur-3xl rounded-full pointer-events-none" />
@@ -294,11 +294,11 @@ export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) =
                 </li>
                 <li className="flex items-center space-x-2.5">
                   <Check className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                  <span>Custom Playbook Risk Rules</span>
+                  <span>Word (.docx) Redlines & RAG Assistant</span>
                 </li>
                 <li className="flex items-center space-x-2.5">
                   <Check className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                  <span>Priority SLA Support (&lt;12h Response)</span>
+                  <span>Direct Priority Beta Email Support</span>
                 </li>
               </ul>
             </div>

@@ -642,6 +642,7 @@ BEGIN
     'workspace_id', v_job.workspace_id,
     'retain_audit', v_job.retain_audit,
     'audit_reservation_id', v_job.audit_reservation_id,
+    'report_id', v_job.report_id,
     'extracted_text', v_text
   );
 END;

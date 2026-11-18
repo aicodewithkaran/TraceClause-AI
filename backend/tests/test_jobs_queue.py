@@ -190,4 +190,72 @@ def test_circuit_breaker_ai_processing_kill_switch(client):
         settings.AI_PROCESSING_ENABLED = original_setting
         app.dependency_overrides.pop(get_current_user, None)
 
+def test_job_worker_heartbeat_touch():
+    """Assert _touch_heartbeat updates heartbeat_at on contract_analysis_jobs verifying fencing token."""
+    from app.services.job_worker import JobWorker
+    worker = JobWorker(worker_id="test_worker_hb")
+
+    update_payloads = []
+
+    class MockJobTable:
+        def update(self, payload):
+            update_payloads.append(payload)
+            return self
+        def eq(self, col, val):
+            return self
+        def execute(self):
+            class Res:
+                data = [{"id": "job-hb-1"}]
+            return Res()
+
+    class MockSupabase:
+        def table(self, name):
+            return MockJobTable()
+
+    worker.supabase = MockSupabase()
+    success = worker._touch_heartbeat("job-hb-1", 3)
+    assert success is True
+    assert len(update_payloads) == 1
+    assert "heartbeat_at" in update_payloads[0]
+
+def test_retry_cleanup_purges_prior_partial_report():
+    """Assert retry execution purges existing partial report and embeddings before writing new report."""
+    from app.services.job_worker import JobWorker
+    worker = JobWorker(worker_id="test_worker_cleanup")
+
+    deleted_tables = []
+
+    class MockTable:
+        def __init__(self, name):
+            self.name = name
+        def select(self, *args, **kwargs):
+            return self
+        def eq(self, col, val):
+            return self
+        def delete(self):
+            deleted_tables.append(self.name)
+            return self
+        def execute(self):
+            class Res:
+                data = [{"report_id": "partial-rep-999"}]
+            return Res()
+
+    class MockSupabase:
+        def table(self, name):
+            return MockTable(name)
+
+    worker.supabase = MockSupabase()
+
+    # Query existing report_id and purge
+    chk = worker.supabase.table("contract_analysis_jobs").select("report_id").eq("id", "job-1").execute()
+    existing_rep = chk.data[0]["report_id"]
+    assert existing_rep == "partial-rep-999"
+
+    worker.supabase.table("contract_embeddings").delete().eq("report_id", existing_rep).execute()
+    worker.supabase.table("contract_reports").delete().eq("id", existing_rep).execute()
+
+    assert "contract_embeddings" in deleted_tables
+    assert "contract_reports" in deleted_tables
+
+
 

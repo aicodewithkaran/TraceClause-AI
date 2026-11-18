@@ -7,7 +7,7 @@ An enterprise-grade, decoupled legal contract audit platform built with **Next.j
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0-emerald.svg)
 ![Supabase](https://img.shields.io/badge/Supabase-pgvector-emerald.svg)
 ![Python](https://img.shields.io/badge/Python-3.12-blue.svg)
-![Tests](https://img.shields.io/badge/Tests-38%20Passing-brightgreen.svg)
+![Tests](https://img.shields.io/badge/Tests-42%20Passing-brightgreen.svg)
 
 ---
 
@@ -17,16 +17,20 @@ An enterprise-grade, decoupled legal contract audit platform built with **Next.j
 
 - **Split-Screen Review Dashboard**: Synchronized 50/50 dual-pane interface showing extracted contract text side-by-side with categorized, color-coded clause risk cards (High, Medium, Low).
 - **Asynchronous Durable Queue with Live Stage Tracking**: Heavy agreements ($>30$ pages) run via a PostgreSQL-backed job queue with `FOR UPDATE SKIP LOCKED`, monotonic fencing tokens, and a real-time progress bar in the UI ($20\% \to 50\% \to 80\% \to 100\%$).
-- **Supervised Background Worker Daemon**: Independent worker daemon (`app/worker_daemon.py`) with bounded concurrency, heartbeat renewals, and automated orphan reclamation for zero interrupted job loss.
+- **Supervised Background Worker Daemon & Continuous Heartbeats**: Independent worker daemon (`app/worker_daemon.py`) with bounded concurrency (2 concurrent jobs for beta), automated orphan reclamation, and continuous 15s background heartbeat pings during long model calls to prevent premature lease reclamation.
+- **Strict Fail-Closed Legal Risk Engine**: Omitted, malformed, or missing model output strictly fails closed (`RuntimeError`) and refunds quota rather than dangerously assuming "Low Risk" or "Acceptable as written".
+- **Active AI Provider Budget Enforcement**: Every Gemini, OpenAI, Claude, and embedding API call records estimated token cost via `budget_tracker.record_usage()`. If the monthly hard budget ceiling ($250 USD) is reached, an operational circuit breaker trips to block further model debt.
+- **Retry-Safe Partial Report Cleanup**: Retried jobs and failures verify and purge previously linked `report_id` rows in `contract_reports` and `contract_embeddings` before generating new output.
 - **Interactive Grounded RAG Assistant**: Context-aware Q&A agent backed by pgvector cosine similarity search, providing instant answers and verifiable contract clause citations.
 - **Native Word (.docx) Redline Export Engine**: Generates standard Microsoft Word `.docx` redline documents with strikethrough original language, underlined counter-proposals, and risk callout boxes.
-- **Enterprise Security & Zero Retention**: Documents are streamed and parsed entirely in server RAM (PyMuPDF & python-docx) with zero disk retention. Staged text payloads are automatically purged upon audit completion.
-- **Upstream AI Resilience & Zero Mock in Production**: Targeted `tenacity` exponential backoff with jitter on rate limits (HTTP 429) and timeouts across OpenAI, Gemini, and Claude. Mock legal output is strictly prohibited in production.
+- **Enterprise Security & Zero Disk Retention**: Documents are streamed and parsed entirely in server RAM (PyMuPDF & python-docx) with zero disk retention. Staged text payloads are automatically purged upon audit completion or failure.
 - **Multi-Tier Quota Governance**:
   - **Free Tier**: 3 lifetime full-contract audits to evaluate capabilities.
   - **Solo Plan ($79/mo)**: 20 monthly audits, `.docx` redline exports, and interactive RAG Assistant access.
-  - **Team Plan ($299/mo)**: 100 pooled monthly audits, team workspace collaboration, and multi-seat access.
+  - **Team Plan ($299/mo)**: 100 pooled monthly audits, team workspace collaboration, multi-seat access, and direct priority beta email support.
 - **Razorpay Payment Engine**: Server-authoritative order creation, in-app standard checkout modal, HMAC-SHA256 signature verification, and atomic database entitlement fulfillment via PostgreSQL stored procedures.
+- **Process-Local Rate Limiting Guard**: In-memory sliding-window limiter (60 req/min/IP) with sanitized proxy IP resolution (`X-Real-IP` priority) serving as an immediate single-node guard for Beta.
+- **Strictly Pinned Dependencies**: Python dependencies in `requirements.txt` are pinned to exact versions (`==`) for repeatable, deterministic production deployments.
 
 ---
 
@@ -148,7 +152,7 @@ pytest tests/
 ```
 Output:
 ```text
-======================== 33 passed, 7 warnings in 0.71s ========================
+======================== 42 passed, 8 warnings in 2.93s ========================
 ```
 
 ### Running Load Tests (Locust)
