@@ -158,3 +158,4 @@ class AIBudgetService:
             return False
 
 ai_budget_service = AIBudgetService()
+
