@@ -1,6 +1,7 @@
 import time
 import uuid
 import logging
+import ipaddress
 from collections import defaultdict
 from typing import Dict, List, Any, Optional, Tuple
 from fastapi import HTTPException, status
@@ -43,6 +44,20 @@ class RateLimiterOutageError(Exception):
     pass
 
 
+def _is_trusted_proxy_peer(peer_ip: str, trusted_proxies: List[str]) -> bool:
+    if "*" in trusted_proxies or peer_ip in trusted_proxies:
+        return True
+    try:
+        peer_addr = ipaddress.ip_address(peer_ip)
+        for entry in trusted_proxies:
+            if "/" in entry:
+                net = ipaddress.ip_network(entry, strict=False)
+                if peer_addr in net:
+                    return True
+    except Exception:
+        pass
+    return False
+
 def get_trusted_client_ip(request: Request) -> str:
     """
     Safely extracts the authoritative client IP address respecting trusted reverse proxies.
@@ -51,14 +66,14 @@ def get_trusted_client_ip(request: Request) -> str:
     1. Direct peer IP (socket host) is the authoritative network peer.
     2. If peer IP is NOT in settings.TRUSTED_PROXIES (and not '*'):
        Client-supplied headers (X-Forwarded-For, X-Real-IP) are UNTRUSTED and completely ignored.
-    3. If peer IP IS in settings.TRUSTED_PROXIES:
+    3. If peer IP IS in settings.TRUSTED_PROXIES (supports exact IP and CIDR subnets e.g. 10.0.0.0/8):
        - Checks X-Real-IP (set and overwritten by trusted reverse proxy like Render or Cloudflare).
        - Or inspects X-Forwarded-For and takes the rightmost (last) untampered IP before the trusted proxy.
     """
     peer_ip = request.client.host if request.client else "unknown"
 
     trusted_proxies = getattr(settings, "TRUSTED_PROXIES", ["127.0.0.1", "::1"])
-    is_trusted_peer = ("*" in trusted_proxies) or (peer_ip in trusted_proxies)
+    is_trusted_peer = _is_trusted_proxy_peer(peer_ip, trusted_proxies)
 
     if not is_trusted_peer:
         # Direct untrusted connection: client could forge any header. Trust ONLY socket IP.

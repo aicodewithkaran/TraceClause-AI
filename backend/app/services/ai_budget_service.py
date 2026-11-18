@@ -58,9 +58,16 @@ class AIBudgetService:
 
     @classmethod
     def estimate_cost_microdollars(cls, model: str, prompt_text: str, max_output_tokens: Optional[int] = None) -> int:
-        """Estimates maximum plausible cost in microdollars for a prompt and model."""
+        """Estimates maximum plausible cost in microdollars for a prompt and model with conservative safety bounds."""
         pricing = MODEL_PRICING.get(model, MODEL_PRICING["gemini-1.5-pro"])
-        tokens_in = max(1, len(prompt_text) // 4)
+        
+        try:
+            import tiktoken
+            enc = tiktoken.get_encoding("cl100k_base")
+            tokens_in = max(1, len(enc.encode(prompt_text)))
+        except Exception:
+            tokens_in = max(1, int(len(prompt_text) / 3.5))
+
         tokens_out = max_output_tokens if max_output_tokens is not None else pricing["default_max_output_tokens"]
         
         cost = (tokens_in * pricing["input_microdollars_per_token"]) + (tokens_out * pricing["output_microdollars_per_token"])

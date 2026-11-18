@@ -60,7 +60,7 @@ Upload the following test payloads to `POST /api/v1/upload`:
 - [ ] Submit an extracted contract to `POST /api/v1/jobs/submit`.
 - [ ] Verify HTTP response time is **< 200ms** returning `status = 'queued'` and a unique `job_id`.
 - [ ] Inspect PostgreSQL `contract_analysis_jobs`: verify row is locked with `status = 'processing'` and `fencing_token = 1`.
-- [ ] Monitor polling endpoint `GET /api/v1/jobs/{job_id}/status`: verify live progress updates (20% -> 50% -> 80% -> 95% -> 100%).
+- [ ] Monitor polling endpoint `GET /api/v1/jobs/{job_id}`: verify live progress updates (20% -> 50% -> 80% -> 95% -> 100%).
 - [ ] Verify heartbeats are continuously touched in the database during long LLM calls.
 
 ### Step 4: Analysis Output & Citations Integrity
@@ -70,7 +70,7 @@ Upload the following test payloads to `POST /api/v1/upload`:
   - Linked `analysis_job_id` and matching `fencing_token`.
 - [ ] Verify vector embeddings were generated and stored in `public.contract_embeddings`.
 - [ ] Perform RAG query via `POST /api/v1/rag/chat`: verify grounded answer with clause citations.
-- [ ] Export native Word document via `GET /api/v1/export/docx/{report_id}`: verify redlines and comments format cleanly.
+- [ ] Export native Word document via `GET /api/v1/contract/{report_id}/export-docx`: verify redlines and comments format cleanly.
 
 ### Step 5: Quota Accounting & Refund Integrity
 - [ ] On audit completion: verify `public.quota_reservations` transitions to `committed`.
@@ -87,7 +87,7 @@ Upload the following test payloads to `POST /api/v1/upload`:
 - [ ] **Must return 0.** Staged contract text must be wiped immediately upon terminal state.
 
 ### Step 7: Data Cleanup & Tenant Deletion
-- [ ] Delete test report via `DELETE /api/v1/reports/{report_id}`.
+- [ ] Delete test report via `DELETE /api/v1/contract/{report_id}`.
 - [ ] Verify cascade deletion removes all corresponding rows in `public.contract_embeddings`.
 - [ ] Verify User A cannot delete or access User B's reports.
 
@@ -113,10 +113,10 @@ Upload the following test payloads to `POST /api/v1/upload`:
 - [ ] Create two distinct accounts: User Alpha and User Beta.
 - [ ] User Alpha submits an audit and generates report `rep_alpha_01`.
 - [ ] User Beta attempts:
-  - `GET /api/v1/reports/rep_alpha_01` -> **Must return HTTP 404/403**.
-  - `GET /api/v1/jobs/{alpha_job_id}/status` -> **Must return HTTP 404/403**.
+  - `GET /api/v1/contract/{rep_alpha_01}` -> **Must return HTTP 404/403**.
+  - `GET /api/v1/jobs/{alpha_job_id}` -> **Must return HTTP 404/403**.
   - `POST /api/v1/rag/chat` referencing `contract_id = rep_alpha_01` -> **Must return HTTP 404/403**.
-  - `GET /api/v1/export/docx/rep_alpha_01` -> **Must return HTTP 404/403**.
+  - `GET /api/v1/contract/{rep_alpha_01}/export-docx` -> **Must return HTTP 404/403**.
 
 ---
 
@@ -166,37 +166,46 @@ Execute these tests in Staging only:
 
 ---
 
-## 5. Staging Sign-Off Evidence Log Template
+## 5. Live Staging Release Sign-Off Template
 
-Before deploying any commit to production, complete and commit this sign-off record:
+> [!IMPORTANT]
+> **Operator Instructions:** This sign-off section is an unfilled template. It must be filled in with real evidence observed from the live staging deployment (Render Staging + Supabase Staging + Test Razorpay + Live AI key) before setting production traffic live. Automated CI passing is a prerequisite, not staging verification.
 
 ```markdown
-### Staging Release Verification Record
+### Staging Release Verification Record (Fill in upon live staging run)
 
-- **Date & UTC Time:** 2026-11-18 17:00 UTC
-- **Git Commit Hash:** [e.g. 7b343c04979bb2496c8b39a336185acbcf15036e]
+- **Execution Date & UTC Time:** [PENDING STAGING RUN]
+- **Target Git Commit:** [e.g. git rev-parse HEAD]
 - **Applied Database Migrations:** 
   - `20261105_production_master_hardening.sql`
   - `20261118_durable_ai_budget_and_fenced_cleanup.sql`
-- **Environment Services:**
-  - FastAPI Web: Render Web Service (2 Uvicorn instances)
-  - Worker: Render Dedicated Worker (concurrency=2)
-  - PostgreSQL: Supabase Staging (15.x, pgvector enabled)
-  - Redis: Upstash Staging
-- **Test Results Summary:**
-  - Automated Unit/Integration Tests: 60 / 60 Passed (0 failures)
-  - TypeScript Type Check (`tsc --noEmit`): 0 Errors
-  - E2E 10-Step Test Sequence: PASSED (Steps 1-10 verified)
-  - Worker Kill & Resume Test: PASSED (Fencing token incremented, zero duplicates)
-  - AI Budget Cap Trip Test: PASSED (Hard limit locked in DB, quota restored)
-  - Razorpay Test Webhook Replay: PASSED (Idempotent 200, no double entitlement)
-  - Cross-Tenant Isolation: PASSED (Zero data leaks between Alpha and Beta)
-- **Observed Metrics:**
-  - Peak Worker RAM: 242 MB
-  - Average Single Audit Time: 18.4 seconds
-  - Total AI Spend Incurred in Staging: $0.14 USD
-- **Sign-off Engineers:**
-  - Senior Software Engineer: Karan Singh (@aicodewithkaran)
-  - Verification Status: **APPROVED FOR BETA LAUNCH**
+- **Deployed Staging Infrastructure:**
+  - FastAPI Web Service: [e.g. Render Staging Web URL]
+  - Background Worker: [e.g. Render Staging Worker ID]
+  - Database: [e.g. Supabase Staging Project ref]
+  - Redis: [e.g. Render Redis / Upstash Staging URL]
+- **E2E Checklist Sign-off:**
+  - [ ] Step 1: Sign up & Auth verification
+  - [ ] Step 2: Upload robustness matrix (small, medium, 95-page, disguised, corrupt, >15MB)
+  - [ ] Step 3: Queue submission & worker progress polling (GET /api/v1/jobs/{job_id})
+  - [ ] Step 4: Output verification, citations, RAG, and DOCX download (GET /api/v1/contract/{id}/export-docx)
+  - [ ] Step 5: Quota committed on success; refunded once on failure
+  - [ ] Step 6: Zero disk retention & staged payload wiped from DB
+  - [ ] Step 7: Report cascade deletion (DELETE /api/v1/contract/{id})
+  - [ ] Step 8: Razorpay test checkout & HMAC verification
+  - [ ] Step 9: Webhook replay idempotency (zero double-credit)
+  - [ ] Step 10: Multi-tenant cross-user isolation confirmed
+- **Failure & Load Scenarios:**
+  - [ ] Test A: Worker SIGTERM kill & resumption with fencing token increment
+  - [ ] Test B: Database budget cap trip with $0.05 cap (job rejected, quota preserved)
+  - [ ] Test C: Redis outage fail-closed check
+  - [ ] Test D: 20 concurrent audits load ramp (worker RAM < 512MB)
+- **Live Staging Metrics Observed:**
+  - Peak Worker RAM: [e.g. ___ MB]
+  - Average Single Audit Time: [e.g. ___ seconds]
+  - Total AI Spend Incurred: [e.g. $___ USD]
+- **Sign-off Reviewer:**
+  - Name / Role: [____________________]
+  - Final Gate Verdict: [PENDING LIVE STAGING RUN / APPROVED FOR BETA]
 ```
 

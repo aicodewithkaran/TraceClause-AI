@@ -462,3 +462,111 @@ $$;
 
 REVOKE ALL ON FUNCTION public.claim_next_analysis_job FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.claim_next_analysis_job TO service_role;
+
+-- 6.4 Atomic Fenced Report Persistence & Completion Procedure
+-- Commits report, embeddings, quota completion, and staged text purge in ONE transaction
+CREATE OR REPLACE FUNCTION public.persist_analysis_report_and_complete(
+  p_job_id UUID,
+  p_token INT,
+  p_report_payload JSONB,
+  p_embeddings_payload JSONB DEFAULT '[]'::jsonb
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_job public.contract_analysis_jobs%ROWTYPE;
+  v_report_id UUID;
+  v_emb JSONB;
+BEGIN
+  PERFORM set_config('app.internal_mutation', 'true', true);
+
+  -- 1. Exclusively lock the job row requiring matching job_id, fencing_token, and status = 'processing'
+  SELECT * INTO v_job
+  FROM public.contract_analysis_jobs
+  WHERE id = p_job_id AND fencing_token = p_token AND status = 'processing'
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'error', 'LEASE_LOST');
+  END IF;
+
+  -- 2. Clean up any abandoned prior report for this job attempt
+  DELETE FROM public.contract_embeddings WHERE report_id IN (
+    SELECT id FROM public.contract_reports WHERE analysis_job_id = p_job_id AND fencing_token = p_token
+  );
+  DELETE FROM public.contract_reports WHERE analysis_job_id = p_job_id AND fencing_token = p_token;
+
+  -- 3. Insert report row
+  INSERT INTO public.contract_reports (
+    user_id,
+    workspace_id,
+    file_name,
+    overall_risk_score,
+    summary_json,
+    clauses_json,
+    analysis_job_id,
+    fencing_token
+  ) VALUES (
+    v_job.user_id,
+    v_job.workspace_id,
+    v_job.file_name,
+    p_report_payload->>'overall_risk_score',
+    COALESCE(p_report_payload->'summary_json', '{}'::jsonb),
+    COALESCE(p_report_payload->'clauses_json', '[]'::jsonb),
+    p_job_id,
+    p_token
+  ) RETURNING id INTO v_report_id;
+
+  -- 4. Batch insert vector embeddings if provided
+  IF jsonb_array_length(p_embeddings_payload) > 0 THEN
+    FOR v_emb IN SELECT * FROM jsonb_array_elements(p_embeddings_payload)
+    LOOP
+      INSERT INTO public.contract_embeddings (
+        report_id,
+        user_id,
+        workspace_id,
+        clause_number,
+        clause_text,
+        embedding
+      ) VALUES (
+        v_report_id,
+        v_job.user_id,
+        v_job.workspace_id,
+        (v_emb->>'clause_number')::INT,
+        v_emb->>'clause_text',
+        (v_emb->>'embedding')::vector(1536)
+      );
+    END LOOP;
+  END IF;
+
+  -- 5. Mark job completed
+  UPDATE public.contract_analysis_jobs
+  SET status = 'completed',
+      report_id = v_report_id,
+      progress_percent = 100,
+      stage_message = 'Analysis complete',
+      updated_at = NOW()
+  WHERE id = p_job_id AND fencing_token = p_token;
+
+  -- 6. Commit quota reservation
+  UPDATE public.quota_reservations
+  SET status = 'committed'
+  WHERE audit_id = v_job.audit_reservation_id;
+
+  -- 7. Purge staged contract text immediately
+  DELETE FROM public.staged_job_payloads WHERE job_id = p_job_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'report_id', v_report_id,
+    'job_id', p_job_id,
+    'fencing_token', p_token
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.persist_analysis_report_and_complete FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.persist_analysis_report_and_complete TO service_role;

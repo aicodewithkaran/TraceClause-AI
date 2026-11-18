@@ -110,56 +110,37 @@ class JobWorker:
                     logger.warning(f"Aborting job {job_id}: lease lost at 95% progress update.")
                     return False
 
-                # Report payload with strict ownership linking (job_id, fencing_token)
+                # Format embeddings payload for atomic PostgreSQL persistence
+                emb_payload = []
+                for idx, (clause, emb) in enumerate(zip(result.clauses, embeddings)):
+                    emb_payload.append({
+                        "clause_number": clause.clause_number,
+                        "clause_text": clause.original_text,
+                        "embedding": emb
+                    })
+
+                # Report payload with risk score, summary, and clause breakdown
                 report_payload = {
-                    "user_id": user_id,
-                    "file_name": file_name,
                     "overall_risk_score": result.summary.overall_risk_score,
                     "summary_json": result.summary.model_dump(),
-                    "clauses_json": [c.model_dump() for c in result.clauses],
-                    "analysis_job_id": job_id,
-                    "fencing_token": token
+                    "clauses_json": [c.model_dump() for c in result.clauses]
                 }
-                if workspace_id:
-                    report_payload["workspace_id"] = workspace_id
 
-                rep_res = self.supabase.table("contract_reports").insert(report_payload).execute()
-                if rep_res.data and len(rep_res.data) > 0:
-                    report_id = rep_res.data[0]["id"]
+                # Step 5: Atomically Persist Report, Embeddings, and Complete Job via Fenced RPC
+                persist_res = self.supabase.rpc("persist_analysis_report_and_complete", {
+                    "p_job_id": job_id,
+                    "p_token": token,
+                    "p_report_payload": report_payload,
+                    "p_embeddings_payload": emb_payload
+                }).execute()
 
-                    # Record report_id on the job row under strict fencing token match
-                    try:
-                        self.supabase.table("contract_analysis_jobs") \
-                            .update({"report_id": report_id}) \
-                            .eq("id", job_id) \
-                            .eq("fencing_token", token) \
-                            .execute()
-                    except Exception as e:
-                        logger.warning(f"Failed to record report_id on job {job_id}: {e}")
+                res_data = persist_res.data or {}
+                if not res_data.get("success"):
+                    logger.warning(f"Worker {self.worker_id} lease lost on job {job_id} (token {token}). persist_analysis_report_and_complete aborted.")
+                    return False
 
-                    # Persist Vector Embeddings
-                    emb_rows = []
-                    for idx, (clause, emb) in enumerate(zip(result.clauses, embeddings)):
-                        emb_rows.append({
-                            "report_id": report_id,
-                            "user_id": user_id,
-                            "workspace_id": workspace_id,
-                            "clause_number": clause.clause_number,
-                            "clause_text": clause.original_text,
-                            "embedding": emb
-                        })
-
-                    if emb_rows:
-                        self.supabase.table("contract_embeddings").insert(emb_rows).execute()
-
-            # Step 5: Mark Completed via Fenced Stored Procedure
-            completed = self._complete_job(job_id, token, report_id)
-            if not completed:
-                logger.warning(f"Worker {self.worker_id} lost lease on job {job_id} (token {token}). Fencing token check aborted commit.")
-                # Do NOT perform Python-side deletes: another worker attempt owns the job now
-                return False
-
-            return True
+                logger.info(f"Job {job_id} successfully persisted report {res_data.get('report_id')} and completed under token {token}.")
+                return True
         except Exception as e:
             raw_err = str(e)
             logger.error(f"Job {job_id} failed with error: {raw_err}")

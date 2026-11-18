@@ -317,6 +317,28 @@ class MockDatabaseWithFencing:
             q_res["status"] = "committed"
         return True
 
+    def persist_analysis_report_and_complete(self, p_job_id: str, p_token: int, p_report_payload: dict, p_embeddings_payload: list) -> dict:
+        if self.job["id"] != p_job_id or self.job["fencing_token"] != p_token or self.job["status"] != "processing":
+            return {"success": False, "error": "LEASE_LOST"}
+
+        rep_id = f"rep_fenced_{p_token}"
+        self.reports[rep_id] = {
+            "id": rep_id,
+            "analysis_job_id": p_job_id,
+            "fencing_token": p_token,
+            "payload": p_report_payload
+        }
+        for emb in p_embeddings_payload:
+            self.embeddings.append({"report_id": rep_id, **emb})
+
+        self.job["status"] = "completed"
+        self.job["report_id"] = rep_id
+        q_res = self.quota_reservations.get(self.job["audit_reservation_id"])
+        if q_res:
+            q_res["status"] = "committed"
+
+        return {"success": True, "report_id": rep_id}
+
 
 def test_stale_worker_failure_rejected_by_fencing():
     """Assert a stale worker with an older fencing token cannot fail or mutate a newer job lease."""
@@ -466,6 +488,54 @@ def test_completed_job_cannot_be_failed_by_stale_worker():
     assert db.job["status"] == "completed"
     assert "rep-active-1" in db.reports
     assert len(db.embeddings) == 1
+    assert db.quota_reservations["audit-res-1"]["status"] == "committed"
+
+
+def test_persist_analysis_report_atomic_rejection_on_stale_token():
+    """Assert persist_analysis_report_and_complete rejects stale worker writes atomically with ZERO writes."""
+    db = MockDatabaseWithFencing()
+    db.job["status"] = "processing"
+    db.job["fencing_token"] = 4  # New active token is 4
+
+    class MockRPC:
+        def __init__(self, name, params):
+            self.name = name
+            self.params = params
+        def execute(self):
+            class Res:
+                data = db.persist_analysis_report_and_complete(
+                    self.params["p_job_id"],
+                    self.params["p_token"],
+                    self.params["p_report_payload"],
+                    self.params["p_embeddings_payload"]
+                )
+            return Res()
+
+    # 1. Stale worker with token 3 attempts to write report and embeddings
+    stale_rpc = MockRPC("persist_analysis_report_and_complete", {
+        "p_job_id": "job-fenced-1",
+        "p_token": 3,
+        "p_report_payload": {"overall_risk_score": "HIGH RISK"},
+        "p_embeddings_payload": [{"clause_number": 1, "embedding": [0.1] * 1536}]
+    }).execute()
+
+    assert stale_rpc.data["success"] is False
+    assert stale_rpc.data["error"] == "LEASE_LOST"
+    assert "rep_fenced_3" not in db.reports
+    assert db.job["status"] == "processing"
+
+    # 2. Current worker with token 4 succeeds atomically
+    valid_rpc = MockRPC("persist_analysis_report_and_complete", {
+        "p_job_id": "job-fenced-1",
+        "p_token": 4,
+        "p_report_payload": {"overall_risk_score": "LOW RISK"},
+        "p_embeddings_payload": [{"clause_number": 1, "embedding": [0.2] * 1536}]
+    }).execute()
+
+    assert valid_rpc.data["success"] is True
+    assert "rep_fenced_4" in db.reports
+    assert db.job["status"] == "completed"
+    assert db.job["report_id"] == "rep_fenced_4"
     assert db.quota_reservations["audit-res-1"]["status"] == "committed"
 
 

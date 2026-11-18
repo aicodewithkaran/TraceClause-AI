@@ -1,9 +1,15 @@
+import uuid
+import logging
 from typing import List, Dict, Optional, Any
 from openai import OpenAI
 from anthropic import Anthropic
 from google import genai
 from app.core.config import settings
+from app.services.ai_budget_service import ai_budget_service, AIBudgetService
+from app.core.rate_limiter import budget_tracker
 from supabase import create_client, Client
+
+logger = logging.getLogger("vector_store")
 
 class VectorStoreService:
     """
@@ -55,41 +61,57 @@ class VectorStoreService:
         """
         Generates 1536-dimensional embeddings in batches of up to 50 items per API call.
         Supports both Gemini (gemini-embedding-001) and OpenAI (text-embedding-3-small).
+        Enforces durable PostgreSQL budget ledger reservations before every API call.
         """
         all_embeddings: List[List[float]] = []
-        from app.core.rate_limiter import budget_tracker
-        # Estimate embedding tokens & record against budget
-        estimated_tokens = sum(len(t) for t in texts) // 4
-        budget_tracker.record_usage(estimated_tokens * 0.00000002)
 
         for i in range(0, len(texts), self.BATCH_SIZE):
             batch_texts = texts[i:i + self.BATCH_SIZE]
+            model = settings.OPENAI_EMBEDDING_MODEL if self.embedding_provider == "openai" else settings.GEMINI_EMBEDDING_MODEL
+            req_id = f"emb_req_{uuid.uuid4().hex}"
+            total_chars = sum(len(t) for t in batch_texts)
+            est_cost = AIBudgetService.estimate_cost_microdollars(model, " " * total_chars, max_output_tokens=0)
 
-            if self.embedding_provider == "openai" and self.openai_client:
-                try:
+            # Check and reserve in durable ledger
+            reserved = ai_budget_service.reserve(req_id, est_cost, provider=self.embedding_provider, model=model)
+            if not reserved:
+                logger.critical(f"Monthly AI budget exceeded during embedding generation. Aborting embeddings.")
+                raise RuntimeError("Monthly AI budget limit reached. Embedding generation is halted.")
+
+            try:
+                if self.embedding_provider == "openai" and self.openai_client:
                     res = self.openai_client.embeddings.create(
                         model=settings.OPENAI_EMBEDDING_MODEL,
                         input=batch_texts
                     )
+                    actual_tokens = getattr(res.usage, 'total_tokens', total_chars // 4) if hasattr(res, 'usage') and res.usage else total_chars // 4
+                    actual_cost = AIBudgetService.calculate_actual_cost_microdollars(model, actual_tokens, 0)
+                    ai_budget_service.settle(req_id, actual_cost, status="settled")
+                    budget_tracker.record_usage(actual_cost / 1_000_000)
                     for data in res.data:
                         all_embeddings.append(data.embedding)
-                except Exception:
-                    all_embeddings.extend([[0.0] * 1536 for _ in batch_texts])
 
-            elif self.embedding_provider == "gemini" and self.gemini_client:
-                try:
+                elif self.embedding_provider == "gemini" and self.gemini_client:
                     res = self.gemini_client.models.embed_content(
                         model=settings.GEMINI_EMBEDDING_MODEL,
                         contents=batch_texts,
                         config={"output_dimensionality": 1536}
                     )
+                    ai_budget_service.settle(req_id, est_cost, status="settled")
+                    budget_tracker.record_usage(est_cost / 1_000_000)
                     embeddings_list = res.embeddings if hasattr(res, 'embeddings') and res.embeddings else [res.embedding]
                     for emb in embeddings_list:
                         values = list(emb.values)
                         all_embeddings.append(values)
-                except Exception:
+                else:
+                    ai_budget_service.release(req_id, reason="mock_provider")
                     all_embeddings.extend([[0.0] * 1536 for _ in batch_texts])
-            else:
+            except Exception as e:
+                err_str = str(e).lower()
+                if "timeout" in err_str or "timed out" in err_str:
+                    ai_budget_service.settle(req_id, est_cost, status="uncertain")
+                else:
+                    ai_budget_service.release(req_id, reason=str(e)[:200])
                 all_embeddings.extend([[0.0] * 1536 for _ in batch_texts])
 
         return all_embeddings
@@ -156,6 +178,18 @@ class VectorStoreService:
         return self._generate_completion(system_prompt, user_prompt, [f"TraceClause RAG ({self.llm_provider})"])
 
     def _generate_completion(self, system_prompt: str, user_prompt: str, citations: List[str]) -> Dict[str, Any]:
+        model = settings.OPENAI_MODEL if self.llm_provider == "openai" else (
+            settings.GEMINI_MODEL if self.llm_provider == "gemini" else settings.ANTHROPIC_MODEL
+        )
+        req_id = f"rag_req_{uuid.uuid4().hex}"
+        prompt = f"{system_prompt}\n\n{user_prompt}"
+        est_cost = AIBudgetService.estimate_cost_microdollars(model, prompt, max_output_tokens=1000)
+
+        # 1. Atomically check and reserve in durable ledger
+        reserved = ai_budget_service.reserve(req_id, est_cost, provider=self.llm_provider, model=model)
+        if not reserved:
+            raise RuntimeError("Monthly AI budget limit reached. Grounded RAG query is halted.")
+
         try:
             if self.llm_provider == "openai" and self.openai_client:
                 res = self.openai_client.chat.completions.create(
@@ -166,6 +200,11 @@ class VectorStoreService:
                     ],
                     temperature=0.2
                 )
+                tokens_in = res.usage.prompt_tokens if hasattr(res, 'usage') and res.usage else len(prompt) // 4
+                tokens_out = res.usage.completion_tokens if hasattr(res, 'usage') and res.usage else 200
+                actual_cost = AIBudgetService.calculate_actual_cost_microdollars(model, tokens_in, tokens_out)
+                ai_budget_service.settle(req_id, actual_cost, status="settled")
+                budget_tracker.record_usage(actual_cost / 1_000_000)
                 return {"answer": res.choices[0].message.content, "citations": citations}
 
             elif self.llm_provider == "gemini" and self.gemini_client:
@@ -173,6 +212,11 @@ class VectorStoreService:
                     model=settings.GEMINI_MODEL,
                     contents=f"{system_prompt}\n\n{user_prompt}"
                 )
+                tokens_in = getattr(res.usage_metadata, 'prompt_token_count', len(prompt) // 4)
+                tokens_out = getattr(res.usage_metadata, 'candidates_token_count', 200)
+                actual_cost = AIBudgetService.calculate_actual_cost_microdollars(model, tokens_in, tokens_out)
+                ai_budget_service.settle(req_id, actual_cost, status="settled")
+                budget_tracker.record_usage(actual_cost / 1_000_000)
                 return {"answer": res.text, "citations": citations}
 
             elif self.llm_provider == "anthropic" and self.anthropic_client:
@@ -181,11 +225,22 @@ class VectorStoreService:
                     max_tokens=1000,
                     messages=[{"role": "user", "content": f"{system_prompt}\n\n{user_prompt}"}]
                 )
+                tokens_in = res.usage.input_tokens if hasattr(res, 'usage') and res.usage else len(prompt) // 4
+                tokens_out = res.usage.output_tokens if hasattr(res, 'usage') and res.usage else 200
+                actual_cost = AIBudgetService.calculate_actual_cost_microdollars(model, tokens_in, tokens_out)
+                ai_budget_service.settle(req_id, actual_cost, status="settled")
+                budget_tracker.record_usage(actual_cost / 1_000_000)
                 return {"answer": res.content[0].text, "citations": citations}
 
             else:
+                ai_budget_service.release(req_id, reason="mock_provider")
                 return self._mock_chat_response(user_prompt)
-        except Exception:
+        except Exception as e:
+            err_str = str(e).lower()
+            if "timeout" in err_str or "timed out" in err_str:
+                ai_budget_service.settle(req_id, est_cost, status="uncertain")
+            else:
+                ai_budget_service.release(req_id, reason=str(e)[:200])
             return self._mock_chat_response(user_prompt)
 
     def _mock_chat_response(self, text: str) -> Dict[str, Any]:

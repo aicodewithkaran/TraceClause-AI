@@ -7,7 +7,7 @@ An enterprise-grade, decoupled legal contract audit platform built with **Next.j
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0-emerald.svg)
 ![Supabase](https://img.shields.io/badge/Supabase-pgvector-emerald.svg)
 ![Python](https://img.shields.io/badge/Python-3.12-blue.svg)
-![Tests](https://img.shields.io/badge/Tests-60%20Passing-brightgreen.svg)
+![Tests](https://img.shields.io/badge/Tests-61%20Passing-brightgreen.svg)
 
 ---
 

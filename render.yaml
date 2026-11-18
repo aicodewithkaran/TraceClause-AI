@@ -34,6 +34,15 @@ services:
         sync: false
       - key: RAZORPAY_WEBHOOK_SECRET
         sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: traceclause-redis
+          property: connectionString
+      - key: TRUSTED_PROXIES
+        value: "10.0.0.0/8,127.0.0.1,::1"
+      - key: FAIL_CLOSED_ON_REDIS_ERROR
+        value: "true"
 
   # 2. Dedicated Supervised Background Worker (Claims jobs via FOR UPDATE SKIP LOCKED)
   - type: worker
@@ -57,3 +66,8 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
 
+  # 3. Distributed Redis (Multi-Process Atomic Sliding-Window Rate Limiter)
+  - type: redis
+    name: traceclause-redis
+    ipAllowList: [] # internal private network only
+    plan: free

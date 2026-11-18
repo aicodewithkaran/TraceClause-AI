@@ -247,10 +247,10 @@ export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) =
                     <div className="p-2 rounded-xl bg-purple-500/15 text-purple-400 border border-purple-500/30">
                       <Users className="w-4 h-4" />
                     </div>
-                    <h4 className="font-extrabold text-white text-lg">Team Plan</h4>
+                    <h4 className="font-extrabold text-white text-lg">High-Volume Plan</h4>
                   </div>
                   <span className="text-[11px] font-mono font-bold text-purple-300 bg-purple-500/10 px-2.5 py-1 rounded-full border border-purple-500/30 flex items-center space-x-1">
-                    <span>Up to 4 User Seats</span>
+                    <span>100 Audits / 30 Days</span>
                   </span>
                 </div>
 
@@ -273,7 +273,7 @@ export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) =
                   <span className="text-xs text-purple-300 font-medium">/ 30 days</span>
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1">
-                  Built for legal teams, law firms & corporate procurement.
+                  Built for high-volume contract review & corporate procurement.
                 </p>
               </div>
 
@@ -282,15 +282,11 @@ export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) =
               <ul className="text-xs text-slate-200 space-y-2.5">
                 <li className="flex items-center space-x-2.5 font-semibold text-white">
                   <Check className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                  <span>4 User Seats included</span>
+                  <span>100 Contract Audits / month</span>
                 </li>
                 <li className="flex items-center space-x-2.5 font-semibold text-white">
                   <Check className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                  <span>100 Contract Audits / month (Pooled)</span>
-                </li>
-                <li className="flex items-center space-x-2.5">
-                  <Check className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                  <span>Shared Team Workspace & Reports</span>
+                  <span>High-Throughput Priority Worker Queue</span>
                 </li>
                 <li className="flex items-center space-x-2.5">
                   <Check className="w-4 h-4 text-purple-400 flex-shrink-0" />
@@ -298,7 +294,11 @@ export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) =
                 </li>
                 <li className="flex items-center space-x-2.5">
                   <Check className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                  <span>Direct Priority Beta Email Support</span>
+                  <span>Direct Priority Founder Email Support (&lt;24h)</span>
+                </li>
+                <li className="flex items-center space-x-2.5 text-slate-400">
+                  <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-purple-300">Roadmap</span>
+                  <span>Multi-Seat Team Invites: Coming in v2.1</span>
                 </li>
               </ul>
             </div>
@@ -315,7 +315,7 @@ export const PaymentModal: React.FC<PricingModalProps> = ({ isOpen, onClose }) =
                 </>
               ) : (
                 <>
-                  <span>Choose Team Plan ($299)</span>
+                  <span>Choose High-Volume Plan ($299)</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
