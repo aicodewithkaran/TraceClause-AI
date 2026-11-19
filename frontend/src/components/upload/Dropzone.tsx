@@ -209,11 +209,21 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onAnalysisComplete }) => {
               <span>•</span>
               <span className="flex items-center space-x-1">
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>Zero Storage Retention</span>
+                <span>In-Memory Parsing • Zero File Disk Storage</span>
               </span>
             </div>
           </div>
         )}
+      </div>
+
+      {/* Explicit Data Handling & Privacy Notice */}
+      <div className={`mt-3 p-3.5 rounded-2xl border text-[11px] leading-relaxed flex items-start space-x-2.5 ${
+        isDark ? 'bg-slate-900/60 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
+      }`}>
+        <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+        <span>
+          <strong>Privacy & Data Notice:</strong> We do not store your original uploaded file as a persistent file. We process it in memory, temporarily stage extracted text while the audit runs, and delete that staged text when processing completes or fails. If audit history is enabled, the generated report, clause text, and embeddings are stored in your account until you delete them. Contract content is sent securely to our configured AI providers to generate the analysis.
+        </span>
       </div>
 
       {error && (

@@ -105,10 +105,10 @@ export const InteractiveMotionGraphic: React.FC = () => {
             </div>
             <div className="space-y-0.5">
               <h4 className={`text-xs font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                Zero Storage Guarantee
+                In-Memory File Processing
               </h4>
               <p className={`text-[11px] leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                Files processed in RAM memory & auto-purged immediately. 0 Bytes stored.
+                Original files processed in RAM with 0 bytes saved on disk. Staged text purged post-audit; reports kept until deleted.
               </p>
             </div>
           </div>

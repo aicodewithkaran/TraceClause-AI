@@ -366,7 +366,7 @@ export default function Home() {
                         Ready to Audit Your Contracts in Under 60 Seconds?
                       </h3>
                       <p className={`text-xs max-w-lg mx-auto ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                        Create your free account now to analyze up to 3 contracts with zero storage retention and instant DOCX redlines.
+                        Create your free account now to analyze up to 3 contracts with in-memory file processing, zero persistent file storage, and instant DOCX redlines.
                       </p>
                     </div>
 

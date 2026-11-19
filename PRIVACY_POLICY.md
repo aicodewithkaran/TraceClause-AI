@@ -31,6 +31,9 @@ When you navigate our web application or execute API calls, we automatically log
 - **Cookies & Storage Technologies:** Session cookies and local storage items necessary to maintain user authentication states, workspace context, and application preferences.
 
 ### 1.3 AI Input Data, Contracts & Vector Embeddings
+> **Standardized Data Handling Policy**:  
+> *We do not store the original uploaded file as a persistent file. We process it in memory, temporarily stage extracted text while the audit runs, and delete that staged text when processing completes or fails. If audit history is enabled, the generated report, clause text, and embeddings are stored in your account until you delete them. Contract content is sent securely to our configured AI providers to generate the analysis.*
+
 To perform legal contract audits and interactive RAG Q&A, we collect and process:
 - **Uploaded Document Content:** PDF files, Microsoft Word (`.docx`) documents, raw agreement text, and custom audit prompt instructions ("**User Content**" or "**Prompts**");
 - **Extracted Text & Metadata:** Document line numbers, extracted clause text, defined terms, and structural contract headings;
@@ -99,6 +102,9 @@ When transferring Personal Data originating from the European Economic Area (EEA
 We retain your account registration data (name, email, subscription status) for as long as your account remains active. If you cancel your subscription or close your account, we retain minimal transaction records for up to seven (7) years to comply with statutory tax, auditing, and financial accounting laws.
 
 ### 5.2 Document & Vector Embedding Retention
+> **Core Retention Principle**:  
+> *We do not store the original uploaded file as a persistent file. We process it in memory, temporarily stage extracted text while the audit runs, and delete that staged text when processing completes or fails. If audit history is enabled, the generated report, clause text, and embeddings are stored in your account until you delete them. Contract content is sent securely to our configured AI providers to generate the analysis.*
+
 - **Transient In-Memory Processing:** Raw uploaded files (PDF/DOCX) sent to `/api/v1/documents/upload` are parsed strictly in server memory (RAM) via byte streams without being stored on server disk. Concurrency is throttled to 3 simultaneous in-memory extractions per worker to prevent resource exhaustion. Legacy binary `.doc` files are not supported.
 - **Temporary Payload Staging:** In asynchronous background queue analysis flows, extracted text is temporarily staged in `staged_job_payloads` exclusively while the analysis worker processes the job. Upon reaching a terminal state (`completed` or `failed`), the staged raw text is permanently and automatically deleted immediately.
 - **User-Controlled Database Storage:** To power the Audit Vault, DOCX redline export, and citation-linked RAG chat, extracted clause text snippets, risk analyses, counter-language recommendations, and 1536-dimensional vector embeddings are stored in your isolated database record for as long as you maintain the audit in your account.

@@ -97,6 +97,19 @@ export const TermsAcceptanceModal: React.FC<TermsAcceptanceModalProps> = ({
           </div>
         )}
 
+        {/* Core Privacy & Data Handling Guarantee Banner */}
+        <div className={`p-4 mx-6 mt-4 rounded-2xl border text-xs leading-relaxed flex items-start space-x-3 ${
+          isDark ? 'bg-indigo-950/30 border-indigo-500/30 text-slate-300' : 'bg-indigo-50 border-indigo-200 text-slate-700'
+        }`}>
+          <ShieldCheck className="w-5 h-5 text-indigo-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <span className="font-bold text-indigo-400 block mb-0.5">Data Privacy & In-Memory Processing Policy</span>
+            <span>
+              We do not store the original uploaded file as a persistent file. We process it in memory, temporarily stage extracted text while the audit runs, and delete that staged text when processing completes or fails. If audit history is enabled, the generated report, clause text, and embeddings are stored in your account until you delete them. Contract content is sent securely to our configured AI providers to generate the analysis.
+            </span>
+          </div>
+        </div>
+
         {/* Navigation Tabs */}
         <div className={`flex border-b px-6 pt-3 gap-2 ${isDark ? 'border-slate-800 bg-slate-950/40' : 'border-slate-200 bg-slate-100/50'}`}>
           <button
@@ -222,6 +235,9 @@ export const TermsAcceptanceModal: React.FC<TermsAcceptanceModalProps> = ({
 
                 <h4 className="font-bold text-indigo-400">4.3 Non-Exclusive Nature of AI Output</h4>
                 <p>AI Output generated for you may not be unique across different users who analyze standard, boilerplate, or commercially common legal clauses. You acquire no exclusive rights in generic legal phrasing or standard contract templates.</p>
+
+                <h4 className="font-bold text-indigo-400">4.4 Document Handling & Data Lifecycle</h4>
+                <p>We do not store the original uploaded file as a persistent file. We process it in memory, temporarily stage extracted text while the audit runs, and delete that staged text when processing completes or fails. If audit history is enabled, the generated report, clause text, and embeddings are stored in your account until you delete them. Contract content is sent securely to our configured AI providers to generate the analysis.</p>
               </div>
 
               {/* Section 5 */}
@@ -284,7 +300,8 @@ export const TermsAcceptanceModal: React.FC<TermsAcceptanceModalProps> = ({
                 <p>IP addresses, browser type, operating system, endpoint API request metrics, error logs, and session cookies required for authentication and security.</p>
 
                 <h4 className="font-bold text-indigo-400">1.3 AI Input Data, Contracts & Vector Embeddings</h4>
-                <p>Uploaded PDF/DOCX contracts, extracted text chunks, custom prompts, and 1536-dimensional vector embeddings stored securely in Supabase pgvector database under Row Level Security (RLS).</p>
+                <p>We do not store the original uploaded file as a persistent file. We process it in memory, temporarily stage extracted text while the audit runs, and delete that staged text when processing completes or fails. If audit history is enabled, the generated report, clause text, and embeddings are stored in your account until you delete them. Contract content is sent securely to our configured AI providers to generate the analysis.</p>
+                <p>To enable citation-linked Retrieval-Augmented Generation (RAG), vector representations generated via enterprise embeddings are stored securely in Supabase pgvector under Row Level Security.</p>
               </div>
 
               {/* Section 2 */}

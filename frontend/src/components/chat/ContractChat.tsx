@@ -141,7 +141,7 @@ export const ContractChat: React.FC<ContractChatProps> = ({ contractText, isRead
             </div>
             <div className="flex items-center space-x-2">
               <ShieldCheck className="w-4 h-4 text-indigo-400 flex-shrink-0" />
-              <span>Zero data retention or model training on private files</span>
+              <span>Zero AI model training; original files are never persistently stored</span>
             </div>
           </div>
           <button

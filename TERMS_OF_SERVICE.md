@@ -96,6 +96,14 @@ You expressly acknowledge and agree that:
 ### 4.4 Proprietary Rights in the Services
 TraceClause AI and its licensors retain all rights, title, and interest (including all patents, trademarks, service marks, trade secrets, copyrights, software code, UI designs, vector database architectures, and algorithm workflows) in and to the Services, platform, and underlying technologies. The name "TraceClause AI", "ScanShield AI", the logo, graphics, and visual elements are trademarks of the Company, and no right or license is granted to you to use them without express prior written consent.
 
+### 4.5 Document Handling, Temporary Staging, and Data Retention
+You expressly acknowledge and agree to the following operational data lifecycle:
+1. **No Persistent File Storage:** We do not store your original uploaded file (PDF, DOCX) as a persistent file on our servers or cloud storage disks.
+2. **In-Memory Processing:** Uploaded documents are parsed strictly in transient server memory (RAM) via byte streams to extract structural text and section boundaries.
+3. **Temporary Payload Staging:** In asynchronous audit queue workflows, extracted text is temporarily staged in an isolated database record solely while the audit runs. This staged text is permanently deleted immediately when processing completes or fails.
+4. **Account-Level Audit Retention:** If audit history is enabled for your workspace, the resulting structured audit report, extracted clause text, risk scores, counter-language recommendations, and vector embeddings are stored securely in your account database until you permanently delete them via the Audit Vault or account closure.
+5. **Secure AI Transmission:** Contract content and audit prompts are transmitted securely via encrypted TLS to our configured enterprise AI model providers (including Anthropic PBC, OpenAI LLC, and Google LLC) solely to generate the risk analysis and embeddings.
+
 ---
 
 ## 5. AI RELIABILITY & ACCURACY DISCLAIMER (CRUCIAL)

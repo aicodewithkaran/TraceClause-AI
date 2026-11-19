@@ -159,10 +159,10 @@ export const AuthView: React.FC<AuthViewProps> = ({ onSuccess, initialMode = 'si
               </div>
               <div className="space-y-1">
                 <h4 className={`text-sm lg:text-base font-extrabold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                  Zero Storage Guarantee
+                  In-Memory File Processing
                 </h4>
                 <p className={`text-xs lg:text-sm leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                  Files parsed in RAM memory & auto-purged immediately. 0 Bytes saved on disk.
+                  Original files are parsed in RAM with 0 bytes saved to disk. Staged text is deleted post-audit, while reports & embeddings remain in your account until you delete them.
                 </p>
               </div>
             </div>
