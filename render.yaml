@@ -1,11 +1,36 @@
 services:
-  # 1. FastAPI Web Service (Authentication, Validation, Job Ingestion, Health Checks)
+  # 1. Frontend Web Service (Next.js 16 App Router)
+  - type: web
+    name: traceclause-frontend
+    runtime: node
+    rootDir: frontend
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_VERSION
+        value: 20.18.0
+      - key: NEXT_PUBLIC_API_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: NEXT_PUBLIC_RAZORPAY_KEY_ID
+        sync: false
+
+  # 2. FastAPI Web Service (Authentication, Validation, Job Ingestion, Health Probes)
   - type: web
     name: traceclause-api
     runtime: python
-    buildCommand: "cd backend && pip install -r requirements.txt"
-    startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2"
+    rootDir: backend
+    plan: starter
+    healthCheckPath: /api/v1/health/live
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
       - key: ENVIRONMENT
         value: production
       - key: ALLOW_DEMO_AUTH
@@ -16,6 +41,17 @@ services:
         value: "false"
       - key: SECRET_KEY
         generateValue: true
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: TRUSTED_PROXIES
+        value: "10.0.0.0/8,127.0.0.1,::1"
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: traceclause-redis
+          property: connectionString
+      - key: FAIL_CLOSED_ON_REDIS_ERROR
+        value: "true"
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_KEY
@@ -34,23 +70,18 @@ services:
         sync: false
       - key: RAZORPAY_WEBHOOK_SECRET
         sync: false
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: traceclause-redis
-          property: connectionString
-      - key: TRUSTED_PROXIES
-        value: "10.0.0.0/8,127.0.0.1,::1"
-      - key: FAIL_CLOSED_ON_REDIS_ERROR
-        value: "true"
 
-  # 2. Dedicated Supervised Background Worker (Claims jobs via FOR UPDATE SKIP LOCKED)
+  # 3. Dedicated Supervised Background Worker (Claims jobs via FOR UPDATE SKIP LOCKED)
   - type: worker
     name: traceclause-worker
     runtime: python
-    buildCommand: "cd backend && pip install -r requirements.txt"
-    startCommand: "cd backend && python -m app.worker_daemon"
+    rootDir: backend
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.worker_daemon
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
       - key: ENVIRONMENT
         value: production
       - key: WORKER_CONCURRENCY
@@ -66,8 +97,8 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
 
-  # 3. Distributed Redis (Multi-Process Atomic Sliding-Window Rate Limiter)
-  - type: redis
+  # 4. Distributed Redis (Multi-Process Atomic Sliding-Window Rate Limiter)
+  - type: keyvalue
     name: traceclause-redis
     ipAllowList: [] # internal private network only
-    plan: free
+    plan: starter

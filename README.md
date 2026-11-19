@@ -8,6 +8,7 @@ An enterprise-grade, decoupled legal contract audit platform built with **Next.j
 ![Supabase](https://img.shields.io/badge/Supabase-pgvector-emerald.svg)
 ![Python](https://img.shields.io/badge/Python-3.12-blue.svg)
 ![Tests](https://img.shields.io/badge/Tests-61%20Passing-brightgreen.svg)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
 
 ---
 
@@ -40,22 +41,24 @@ An enterprise-grade, decoupled legal contract audit platform built with **Next.j
 ```mermaid
 flowchart LR
     User["Client Browser"]
-    Vercel["Frontend (Next.js 16)<br/>Vercel"]
-    Render["Backend API (FastAPI)<br/>Render Web Service"]
+    Frontend["Frontend (Next.js 16)<br/>Render Web Service"]
+    API["Backend API (FastAPI)<br/>Render Web Service"]
     Worker["Worker Daemon (Python)<br/>Render Background Worker"]
+    Redis["Redis Store<br/>Render Key Value"]
     Supabase[("Supabase Cloud<br/>PostgreSQL + pgvector")]
     Razorpay["Razorpay Gateway<br/>Checkout & Webhooks"]
 
-    User -->|"Visits App"| Vercel
-    Vercel -->|"Auth & JWT"| Supabase
-    Vercel -->|"REST API Requests"| Render
-    Render -->|"Enqueue / Stage Text"| Supabase
+    User -->|"Visits App"| Frontend
+    Frontend -->|"Auth & JWT"| Supabase
+    User -->|"REST API Requests"| API
+    API -->|"Rate Limiter State"| Redis
+    API -->|"Enqueue / Stage Text"| Supabase
     Worker -->|"SKIP LOCKED Claim"| Supabase
     Worker -->|"1536-dim Embeddings"| Supabase
     User -->|"In-App Checkout"| Razorpay
-    Razorpay -->|"Signature Verification"| Render
-    Razorpay -.->|"Async Webhooks"| Render
-    Render -->|"fulfill_purchase RPC"| Supabase
+    Razorpay -->|"Signature Verification"| API
+    Razorpay -.->|"Async Webhooks"| API
+    API -->|"fulfill_purchase RPC"| Supabase
 ```
 
 | Layer | Technologies Used |
@@ -235,19 +238,41 @@ NEXT_PUBLIC_RAZORPAY_KEY_ID="rzp_test_..."
 
 ---
 
+## 🚢 One-Click Render Blueprint Deployment
+
+TraceClause AI is configured for one-click deployment via the unified Blueprint specification ([`render.yaml`](render.yaml)). This deploys all four interconnected services on Render with zero-downtime rolling deploys:
+
+- **`traceclause-frontend`**: Next.js 16 Web Service (`rootDir: frontend`, Node 20 LTS).
+- **`traceclause-api`**: FastAPI Web Service with Uvicorn (`rootDir: backend`, Python 3.12, health probes).
+- **`traceclause-worker`**: Dedicated Supervised Background Worker daemon (`python -m app.worker_daemon`).
+- **`traceclause-redis`**: Managed Valkey / Redis instance for atomic sliding-window rate limiting.
+
+### Quick Deploy Steps
+1. Push this repository to GitHub or GitLab.
+2. In the [Render Dashboard](https://dashboard.render.com/), click **New +** -> **Blueprint**.
+3. Select your repository. Render automatically reads `render.yaml`.
+4. Enter your Supabase credentials, Razorpay secrets, and AI provider API key(s).
+5. Click **Apply**.
+
+📖 **Full Step-by-Step Guide**: See [`docs/14-render-blueprint-deployment-guide.md`](docs/14-render-blueprint-deployment-guide.md) for the complete environment variable checklist, database migration instructions, webhook configuration, and post-deployment verification runbook.
+
+---
+
 ## 📚 Architectural Documentation & Production Runbooks
 
 Explore the deep architectural documentation and production guides:
 
-1. 🏛️ **[Technical Systems Architecture Documentation](SYSTEM_ARCHITECTURE_DOCUMENTATION.md)** — Comprehensive 6-module systems engineering blueprint.
-2. 🚀 **[Production Go-Live Hardening Plan & Launch Gates](PRODUCTION_GO_LIVE_HARDENING_PLAN.md)** — Staged concurrency gates, 10 launch acceptance criteria, and scaling plan.
-3. 📘 **[Incident & Operations Runbook](docs/12-incident-and-operations-runbook.md)** — Stalled worker recovery, circuit breakers, manual payment fulfillment, and telemetry.
-4. 💳 **[Production Deployment & Razorpay Integration Guide](DEPLOYMENT_AND_RAZORPAY_GUIDE.md)** — Step-by-step production rollout guide.
-5. 📄 **[Low-Level Wiring & System Data Flow](docs/01-low-level-wiring.md)**
-6. 📄 **[Points of Failure & Risk Mitigation](docs/02-point-of-failures.md)**
-7. 📄 **[Frontend Architecture Blueprint](docs/03-frontend-architecture.md)**
-8. 📄 **[Backend Architecture Blueprint](docs/04-backend-architecture.md)**
-9. 📄 **[Database Schema & Vector Storage Deep Dive](docs/11-database-schema-vector-storage-deep-dive.md)**
+1. 📘 **[Render Blueprint Deployment & Operations Guide](docs/14-render-blueprint-deployment-guide.md)** — Complete multi-service Render Blueprint guide, secrets checklist, and smoke tests.
+2. 🚦 **[Staging Release Gate & Verification Runbook](docs/13-staging-release-gate-and-verification.md)** — 10-step staging release gate, failover verification, and sign-off template.
+3. 🏛️ **[Technical Systems Architecture Documentation](SYSTEM_ARCHITECTURE_DOCUMENTATION.md)** — Comprehensive systems engineering blueprint.
+4. 🚀 **[Production Go-Live Hardening Plan & Launch Gates](PRODUCTION_GO_LIVE_HARDENING_PLAN.md)** — Staged concurrency gates, launch acceptance criteria, and scaling plan.
+5. 📘 **[Incident & Operations Runbook](docs/12-incident-and-operations-runbook.md)** — Stalled worker recovery, circuit breakers, manual payment fulfillment, and telemetry.
+6. 💳 **[Production Deployment & Razorpay Integration Guide](DEPLOYMENT_AND_RAZORPAY_GUIDE.md)** — Step-by-step production rollout guide.
+7. 📄 **[Low-Level Wiring & System Data Flow](docs/01-low-level-wiring.md)**
+8. 📄 **[Points of Failure & Risk Mitigation](docs/02-point-of-failures.md)**
+9. 📄 **[Frontend Architecture Blueprint](docs/03-frontend-architecture.md)**
+10. 📄 **[Backend Architecture Blueprint](docs/04-backend-architecture.md)**
+11. 📄 **[Database Schema & Vector Storage Deep Dive](docs/11-database-schema-vector-storage-deep-dive.md)**
 
 ---
 
